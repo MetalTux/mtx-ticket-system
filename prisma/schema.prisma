@@ -1,0 +1,145 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// generator client {
+//   provider = "prisma-client"
+//   output   = "../src/generated/prisma"
+// }
+
+// datasource db {
+//   provider = "postgresql"
+// }
+
+
+// Configuración de conexión para PostgreSQL (Neon)
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --- Enums ---
+
+enum Role {
+  ADMIN
+  SOPORTE
+  DESARROLLO
+  VENTAS
+  CONTACTO_CLIENTE
+}
+
+enum Priority {
+  BAJA
+  MEDIA
+  ALTA
+  URGENTE
+}
+
+enum Category {
+  SOPORTE
+  DESARROLLO
+  VENTAS
+}
+
+enum TicketStatus {
+  PENDIENTE
+  EN_PROCESO
+  ESCALADO
+  RESUELTO
+  CANCELADO
+  CERRADO
+}
+
+// --- Modelos de Identidad y Empresas ---
+
+model ProviderCompany {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  
+  users     User[]   
+  clients   ClientCompany[] 
+  tickets   Ticket[]        
+}
+
+model ClientCompany {
+  id                String          @id @default(cuid())
+  name              String
+  createdAt         DateTime        @default(now())
+  
+  // Estandarizado a providerId
+  providerId        String
+  provider          ProviderCompany @relation(fields: [providerId], references: [id])
+  
+  contacts          User[]          
+  tickets           Ticket[]
+}
+
+model User {
+  id              String         @id @default(cuid())
+  name            String?
+  email           String         @unique
+  password        String
+  role            Role           @default(CONTACTO_CLIENTE)
+  createdAt       DateTime       @default(now())
+
+  // Estandarizado: providerId para empleados del servicio
+  providerId      String?
+  provider        ProviderCompany? @relation(fields: [providerId], references: [id])
+  
+  // Estandarizado: clientId para contactos de empresas cliente
+  clientId        String?
+  client          ClientCompany?   @relation(fields: [clientId], references: [id])
+
+  assignedTickets Ticket[]         @relation("AssignedUser")
+  createdTickets  Ticket[]         @relation("CreatorUser")
+  historyEntries  TicketHistory[]
+}
+
+// --- Modelos de Negocio (Tickets) ---
+
+model Ticket {
+  id              String         @id @default(cuid())
+  title           String
+  description     String
+  status          TicketStatus   @default(PENDIENTE)
+  priority        Priority       @default(MEDIA)
+  category        Category
+  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Llaves foráneas estandarizadas
+  providerId      String
+  provider        ProviderCompany @relation(fields: [providerId], references: [id])
+
+  clientId        String
+  client          ClientCompany  @relation(fields: [clientId], references: [id])
+
+  creatorId       String
+  creator         User           @relation("CreatorUser", fields: [creatorId], references: [id])
+
+  assignedToId    String?
+  assignedTo      User?          @relation("AssignedUser", fields: [assignedToId], references: [id])
+
+  history         TicketHistory[]
+}
+
+model TicketHistory {
+  id          String       @id @default(cuid())
+  createdAt   DateTime     @default(now())
+  
+  ticketId    String
+  ticket      Ticket       @relation(fields: [ticketId], references: [id])
+  
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  
+  status      TicketStatus
+  comment     String?      
+}
