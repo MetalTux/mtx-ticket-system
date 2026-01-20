@@ -1,71 +1,75 @@
 // src/app/dashboard/page.tsx
-
-import { auth, signOut } from "@/auth";
-import { redirect } from "next/navigation";
+import { auth } from "@/auth";
+import db from "@/lib/db";
+import { Prisma, TicketStatus } from "@prisma/client"; // Importamos los tipos necesarios
+import Link from "next/link";
 
 export default async function DashboardPage() {
   const session = await auth();
+  const user = session?.user;
 
-  // Guardrail: Si por alguna razón el middleware falla, 
-  // este check protege el componente
-  if (!session) {
-    redirect("/auth/login");
-  }
+  // 1. Construimos el filtro de forma tipada
+  // Usamos Prisma.TicketWhereInput para que TS sepa exactamente qué estamos armando
+  const whereClause: Prisma.TicketWhereInput = user?.role === "ADMIN" 
+    ? {} 
+    : { clientId: user?.clientId ?? undefined }; // Si es null, pasamos undefined
 
-  const user = session.user;
+  // 2. Obtenemos métricas rápidas usando los Enums correctos
+  const [totalTickets, openTickets, closedTickets] = await Promise.all([
+    db.ticket.count({ where: whereClause }),
+    db.ticket.count({ 
+      where: { 
+        ...whereClause, 
+        status: TicketStatus.PENDIENTE // Usamos el Enum en lugar de un string
+      } 
+    }),
+    db.ticket.count({ 
+      where: { 
+        ...whereClause, 
+        status: TicketStatus.CERRADO // Usamos el Enum en lugar de un string
+      } 
+    }),
+  ]);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          {/* Header del Dashboard */}
-          <div className="bg-blue-600 p-6 text-white flex justify-between items-center">
-            <div>
-              <h1 className="text-xl font-bold">Panel de Control</h1>
-              <p className="text-blue-100 text-sm">Sistema de Tickets MTX</p>
-            </div>
-            
-            <form action={async () => {
-              "use server";
-              await signOut();
-            }}>
-              <button className="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded-lg text-sm transition-colors">
-                Cerrar Sesión
-              </button>
-            </form>
-          </div>
+    <div className="space-y-8">
+      {/* Cabecera */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Resumen General</h1>
+        <p className="text-slate-500 dark:text-slate-400 italic">
+          Sesión iniciada como: <span className="font-semibold text-brand-600">{user?.name}</span>
+        </p>
+      </div>
 
-          {/* Contenido de Identidad */}
-          <div className="p-8">
-            <h2 className="text-2xl font-semibold text-slate-800">
-              Bienvenido, {user.name}
-            </h2>
-            
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-xs font-bold uppercase text-slate-400">Rol de Usuario</span>
-                <p className="text-lg font-medium text-blue-600">{user.role}</p>
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-xs font-bold uppercase text-slate-400">Pertenencia</span>
-                <p className="text-lg font-medium text-slate-700">
-                  {user.providerId ? "🏢 Empresa de Atención (Proveedor)" : ""}
-                  {user.clientId ? "👤 Usuario de Cliente Corporativo" : ""}
-                </p>
-              </div>
-            </div>
-
-            {/* Mensaje de Control de Acceso */}
-            <div className="mt-8 p-4 border-l-4 border-amber-400 bg-amber-50 text-amber-800 text-sm">
-              {user.role === 'ADMIN' ? (
-                <p>Tienes acceso total para gestionar empresas, usuarios y tickets de soporte.</p>
-              ) : (
-                <p>Tu acceso está limitado a la creación y seguimiento de tickets de tu empresa.</p>
-              )}
-            </div>
-          </div>
+      {/* Grid de Estadísticas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="card-module">
+          <p className="text-sm font-medium text-slate-500">Tickets Totales</p>
+          <p className="text-3xl font-bold mt-2">{totalTickets}</p>
         </div>
+        <div className="card-module border-l-4 border-l-amber-500">
+          <p className="text-sm font-medium text-slate-500">Pendientes de Atención</p>
+          <p className="text-3xl font-bold text-amber-600 mt-2">{openTickets}</p>
+        </div>
+        <div className="card-module border-l-4 border-l-green-500">
+          <p className="text-sm font-medium text-slate-500">Resueltos</p>
+          <p className="text-3xl font-bold text-green-600 mt-2">{closedTickets}</p>
+        </div>
+      </div>
+
+      {/* Acción Rápida */}
+      <div className="card-module flex flex-col md:flex-row items-center justify-between gap-4 border-dashed border-2">
+        <div>
+          <h3 className="text-lg font-bold">Panel de Operaciones</h3>
+          <p className="text-sm text-slate-500">
+            {user?.role === "ADMIN" 
+              ? "Tienes acceso a la gestión global de tickets." 
+              : "Visualiza y gestiona los tickets de tu organización."}
+          </p>
+        </div>
+        <Link href="/dashboard/tickets/new" className="btn-primary">
+          + Nuevo Ticket
+        </Link>
       </div>
     </div>
   );
