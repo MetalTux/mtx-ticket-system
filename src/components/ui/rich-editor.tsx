@@ -1,7 +1,10 @@
+// src/components/ui/rich-editor.tsx
+
 "use client";
 
 import { useEditor, EditorContent, Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Underline from '@tiptap/extension-underline';
 
 // 1. EL HELPER VA FUERA DEL COMPONENTE PRINCIPAL
 interface MenuButtonProps {
@@ -33,7 +36,7 @@ export default function RichEditor({
   onChange: (html: string) => void 
 }) {
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, Underline],
     content: content,
     immediatelyRender: false, 
     editorProps: {

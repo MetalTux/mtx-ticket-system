@@ -83,6 +83,7 @@ model User {
   client          ClientCompany?   @relation(fields: [clientId], references: [id])
 
   assignedTickets Ticket[]         @relation("AssignedUser")
+  assignedTicketsHistory TicketHistory[]         @relation("AssignedUserHistory")
   createdTickets  Ticket[]         @relation("CreatorUser")
   historyEntries  TicketHistory[]
 }
@@ -113,6 +114,8 @@ model Ticket {
   assignedToId    String?
   assignedTo      User?          @relation("AssignedUser", fields: [assignedToId], references: [id])
 
+  attachments     Json?
+
   history         TicketHistory[]
 }
 
@@ -123,9 +126,17 @@ model TicketHistory {
   ticketId    String
   ticket      Ticket       @relation(fields: [ticketId], references: [id])
   
-  userId      String
+  userId      String       // Quién realiza la acción
   user        User         @relation(fields: [userId], references: [id])
   
   status      TicketStatus
-  comment     String?      
+  comment     String?      @db.Text
+  attachments Json?        // Para nuevos adjuntos en esta actualización
+  isInternal  Boolean      @default(false)
+
+  // --- NUEVOS CAMPOS PARA RASTREAR CAMBIOS ---
+  assignedToId String?     // Si se cambió el asignado en este paso
+  assignedTo   User?       @relation("AssignedUserHistory", fields: [assignedToId], references: [id])
+  priority     Priority?   // Si se cambió la prioridad en este paso
+  category     Category?   // Si se cambió la categoría en este paso
 }

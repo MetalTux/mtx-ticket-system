@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { NextSSRPlugin } from "@uploadthing/react/next-ssr-plugin";
+import { extractRouterConfig } from "uploadthing/server";
+import { ourFileRouter } from "@/app/api/uploadthing/core";
+import "@uploadthing/react/styles.css";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,6 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <NextSSRPlugin routerConfig={extractRouterConfig(ourFileRouter)} />
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
