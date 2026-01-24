@@ -127,7 +127,7 @@ export default async function TicketDetailPage({ params }: { params: { id: strin
                 key={ticket.updatedAt.getTime()}
                 ticket={ticket} 
                 supportUsers={supportUsers}
-                userRole={session.user.role}
+                userRole={session.user.role || "CONTACTO_CLIENTE"}
               />
             </div>
           )}
