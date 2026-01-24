@@ -1,7 +1,7 @@
 // src/auth.config.ts
 
 import type { NextAuthConfig } from "next-auth";
-import Credentials from "next-auth/providers/credentials";
+import { Role } from "@prisma/client";
 
 export const authConfig = {
   secret: process.env.AUTH_SECRET,
@@ -15,7 +15,7 @@ export const authConfig = {
       
       if (isOnDashboard) {
         if (isLoggedIn) return true;
-        return false; // Redirige al login
+        return false;
       }
       return true;
     },
@@ -30,14 +30,12 @@ export const authConfig = {
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.sub as string;
-        session.user.role = token.role as any;
+        session.user.role = token.role as Role;
         session.user.providerId = token.providerId as string;
         session.user.clientId = token.clientId as string;
       }
       return session;
     },
   },
-  providers: [
-    Credentials({}), // Se deja vacío aquí, se completa en auth.ts
-  ],
+  providers: [], // Vacío aquí, se llena en auth.ts
 } satisfies NextAuthConfig;

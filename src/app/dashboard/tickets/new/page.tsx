@@ -1,3 +1,4 @@
+// src/app/dashboard/tickets/new/page.tsx
 import { auth } from "@/auth";
 import db from "@/lib/db";
 import TicketForm from "@/components/tickets/ticket-form";

@@ -11,14 +11,24 @@ export async function createTicket(formData: FormData) {
   const session = await auth();
   if (!session?.user || !session.user.id) throw new Error("No autorizado");
 
+  const clientId = formData.get("clientId") as string;
+  const formCreatorId = formData.get("creatorId") as string;
+  
+  // Lógica de distinción:
+  // El 'registrador' siempre es el usuario logueado.
+  const createdById = session.user.id; 
+  
+  // El 'solicitante' es el que se eligió en el select, 
+  // o el mismo usuario si se está creando su propio ticket.
+  const creatorId = formCreatorId || session.user.id;
+
   const attachmentsRaw = formData.get("attachments") as string;
   const attachments = attachmentsRaw ? JSON.parse(attachmentsRaw) : [];
 
   const title = formData.get("title") as string;
   const description = formData.get("description") as string;
   const priority = formData.get("priority") as Priority;
-  const category = formData.get("category") as Category; // <--- Capturamos el ENUM
-  const clientId = formData.get("clientId") as string;
+  const category = formData.get("category") as Category;
 
   if (!clientId) throw new Error("Debe seleccionar una empresa cliente.");
 
@@ -38,9 +48,10 @@ export async function createTicket(formData: FormData) {
       title,
       description,
       priority,
-      category, // <--- Usamos el valor dinámico del formulario
+      category,
       status: TicketStatus.PENDIENTE,
-      creatorId: session.user.id,
+      creatorId: creatorId,     // El contacto del cliente
+      createdById: createdById, // El agente de soporte
       clientId: clientId,
       providerId: finalProviderId,
       attachments: attachments,

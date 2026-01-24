@@ -57,6 +57,7 @@ model ClientCompany {
   id                String          @id @default(cuid())
   name              String
   createdAt         DateTime        @default(now())
+  isActive          Boolean         @default(true)
   
   // Estandarizado a providerId
   providerId        String
@@ -73,6 +74,7 @@ model User {
   password        String
   role            Role           @default(CONTACTO_CLIENTE)
   createdAt       DateTime       @default(now())
+  isActive        Boolean        @default(true)
 
   // Estandarizado: providerId para empleados del servicio
   providerId      String?
@@ -85,6 +87,7 @@ model User {
   assignedTickets Ticket[]         @relation("AssignedUser")
   assignedTicketsHistory TicketHistory[]         @relation("AssignedUserHistory")
   createdTickets  Ticket[]         @relation("CreatorUser")
+  registeredTickets  Ticket[]         @relation("TicketRegistrar")
   historyEntries  TicketHistory[]
 }
 
@@ -110,6 +113,9 @@ model Ticket {
 
   creatorId       String
   creator         User           @relation("CreatorUser", fields: [creatorId], references: [id])
+
+  createdById     String
+  createdBy       User           @relation("TicketRegistrar", fields: [createdById], references: [id])
 
   assignedToId    String?
   assignedTo      User?          @relation("AssignedUser", fields: [assignedToId], references: [id])
