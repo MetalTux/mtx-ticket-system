@@ -36,11 +36,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Retornamos el usuario con los campos necesarios para el JWT callback
         return {
           id: user.id,
-          name: user.name,
+          name: user.name ?? undefined,
           email: user.email,
           role: user.role,
-          providerId: user.providerId,
-          clientId: user.clientId,
+          providerId: user.providerId ?? undefined, // Aquí estaba el error
+          clientId: user.clientId ?? undefined,     // También aquí por seguridad
         };
       },
     }),

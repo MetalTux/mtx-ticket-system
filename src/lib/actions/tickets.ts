@@ -65,6 +65,7 @@ export async function createTicket(formData: FormData) {
 export async function addTicketUpdate(formData: FormData) {
   const session = await auth();
   if (!session?.user) throw new Error("No autorizado");
+  if (!session?.user.id) throw new Error("No autorizado");
 
   const ticketId = formData.get("ticketId") as string;
   const comment = formData.get("comment") as string;
@@ -79,7 +80,7 @@ export async function addTicketUpdate(formData: FormData) {
     db.ticketHistory.create({
       data: {
         ticketId,
-        userId: session.user.id,
+        userId: session.user.id!,
         status,
         comment,
         attachments,
@@ -99,6 +100,7 @@ export async function addTicketUpdate(formData: FormData) {
 export async function updateTicketFull(formData: FormData) {
   const session = await auth();
   if (!session?.user) throw new Error("No autorizado");
+  if (!session?.user.id) throw new Error("No autorizado");
 
   const ticketId = formData.get("ticketId") as string;
   const comment = formData.get("comment") as string;
@@ -114,7 +116,7 @@ export async function updateTicketFull(formData: FormData) {
     await tx.ticketHistory.create({
       data: {
         ticketId,
-        userId: session.user.id,
+        userId: session.user.id!,
         status,
         priority,
         category,
