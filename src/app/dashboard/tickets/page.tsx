@@ -180,7 +180,7 @@ export default async function TicketsPage({
                       <div className="font-bold text-slate-900 dark:text-white truncate max-w-[220px]">
                         {ticket.title}
                       </div>
-                      <div className="text-[10px] text-slate-400">ID: {ticket.id.slice(-6).toUpperCase()}</div>
+                      <div className="text-[10px] text-slate-400">{ticket.folio}</div>
                     </td>
                     <td className="p-4">
                       <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${

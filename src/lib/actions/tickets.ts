@@ -13,13 +13,7 @@ export async function createTicket(formData: FormData) {
 
   const clientId = formData.get("clientId") as string;
   const formCreatorId = formData.get("creatorId") as string;
-  
-  // Lógica de distinción:
-  // El 'registrador' siempre es el usuario logueado.
   const createdById = session.user.id; 
-  
-  // El 'solicitante' es el que se eligió en el select, 
-  // o el mismo usuario si se está creando su propio ticket.
   const creatorId = formCreatorId || session.user.id;
 
   const attachmentsRaw = formData.get("attachments") as string;
@@ -32,33 +26,56 @@ export async function createTicket(formData: FormData) {
 
   if (!clientId) throw new Error("Debe seleccionar una empresa cliente.");
 
+  // Lógica de Proveedor
   const providerId = session.user.providerId;
-  let finalProviderId;
+  let finalProviderId: string;
 
   if (!providerId) {
     const mainProvider = await db.providerCompany.findFirst();
-    if (!mainProvider) throw new Error("No se encontró una empresa proveedora configurada.");
+    if (!mainProvider) throw new Error("No se encontró una empresa proveedora.");
     finalProviderId = mainProvider.id;
   } else {
     finalProviderId = providerId;
   }
 
-  await db.ticket.create({
-    data: {
-      title,
-      description,
-      priority,
-      category,
-      status: TicketStatus.PENDIENTE,
-      creatorId: creatorId,     // El contacto del cliente
-      createdById: createdById, // El agente de soporte
-      clientId: clientId,
-      providerId: finalProviderId,
-      attachments: attachments,
-    },
+  // --- INICIO DE TRANSACCIÓN PARA EL FOLIO ---
+  const result = await db.$transaction(async (tx) => {
+    // 1. Obtener y aumentar el contador para la categoría específica
+    // El upsert asegura que si la categoría es nueva, empiece en 1
+    const seq = await tx.ticketSequence.upsert({
+      where: { category },
+      update: { nextVal: { increment: 1 } },
+      create: { category, nextVal: 2 },
+    });
+
+    // Calculamos el número actual (si nextVal es 2, el actual es 1)
+    const currentNum = seq.nextVal === 2 ? 1 : seq.nextVal - 1;
+    
+    // Generamos el Folio: S-000001, D-000001, etc.
+    const prefix = category.charAt(0).toUpperCase();
+    const folio = `${prefix}-${String(currentNum).padStart(6, '0')}`;
+
+    // 2. Crear el Ticket con todos tus datos originales + Folio
+    return await tx.ticket.create({
+      data: {
+        folio,
+        sequence: currentNum,
+        title,
+        description,
+        priority,
+        category,
+        status: TicketStatus.PENDIENTE,
+        creatorId,
+        createdById,
+        clientId,
+        providerId: finalProviderId,
+        attachments,
+      },
+    });
   });
 
   revalidatePath("/dashboard/tickets");
+  revalidatePath("/dashboard"); // Revalidamos el Kanban también
   redirect("/dashboard/tickets");
 }
 
@@ -140,4 +157,39 @@ export async function updateTicketFull(formData: FormData) {
   });
 
   revalidatePath(`/dashboard/tickets/${ticketId}`);
+}
+
+export async function updateTicketStatusQuick(
+  ticketId: string, 
+  newStatus: TicketStatus
+) {
+  const session = await auth();
+  if (!session?.user) throw new Error("No autorizado");
+
+  try {
+    await db.$transaction(async (tx) => {
+      // 1. Actualizar el ticket
+      await tx.ticket.update({
+        where: { id: ticketId },
+        data: { status: newStatus },
+      });
+
+      // 2. Registrar en el historial que se movió vía Kanban
+      await tx.ticketHistory.create({
+        data: {
+          ticketId,
+          userId: session.user.id!,
+          comment: `Estado actualizado a **${newStatus}** mediante el Tablero Kanban.`,
+          isInternal: true, // Lo marcamos como interno para que el cliente no se sature de notificaciones de movimiento
+          status: newStatus,
+        },
+      });
+    });
+
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (error) {
+    console.error("Error al mover ticket:", error);
+    return { success: false, error: "No se pudo actualizar el estado" };
+  }
 }

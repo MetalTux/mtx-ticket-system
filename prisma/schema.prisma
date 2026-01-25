@@ -95,6 +95,8 @@ model User {
 
 model Ticket {
   id              String         @id @default(cuid())
+  folio           String         @unique
+  sequence        Int
   title           String
   description     String
   status          TicketStatus   @default(PENDIENTE)
@@ -123,6 +125,11 @@ model Ticket {
   attachments     Json?
 
   history         TicketHistory[]
+}
+
+model TicketSequence {
+  category        Category @id
+  nextVal         Int      @default(1)
 }
 
 model TicketHistory {
