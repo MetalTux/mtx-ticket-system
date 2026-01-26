@@ -39,8 +39,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name ?? undefined,
           email: user.email,
           role: user.role,
-          providerId: user.providerId ?? undefined, // Aquí estaba el error
-          clientId: user.clientId ?? undefined,     // También aquí por seguridad
+          providerId: user.providerId ?? undefined,
+          clientId: user.clientId ?? undefined,
         };
       },
     }),

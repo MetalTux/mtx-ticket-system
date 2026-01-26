@@ -64,7 +64,7 @@ export default function TicketManagementPanel({
               <label className="text-[10px] font-bold uppercase text-slate-500">Asignar a</label>
               <select name="assignedToId" defaultValue={ticket.assignedToId || ""} className="form-input text-sm">
                 <option value="">Sin asignar</option>
-                {supportUsers.map(u => (
+                {supportUsers.filter(u => u.isActive).map(u => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
               </select>

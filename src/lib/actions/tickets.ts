@@ -6,6 +6,11 @@ import db from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Priority, TicketStatus, Category } from "@prisma/client";
+import { resend } from "@/lib/resend";
+import { sendNotification } from "@/lib/mail-service";
+import { TicketUpdateEmail } from "@/emails/TicketUpdateEmail";
+import { NewTicketEmail } from "@/emails/NewTicketEmail";
+import { CATEGORY_LABELS, PRIORITY_LABELS } from "@/enums/constantes";
 
 export async function createTicket(formData: FormData) {
   const session = await auth();
@@ -71,8 +76,26 @@ export async function createTicket(formData: FormData) {
         providerId: finalProviderId,
         attachments,
       },
+      include: { creator: true },
     });
   });
+
+  // 2. DISPARAR NOTIFICACIÓN (Fuera de la transacción para no ralentizar la BD)
+  if (result?.creator.email) {
+    // Usamos void para no bloquear el redirect, o un try-catch silencioso
+    await sendNotification({
+      to: result.creator.email,
+      subject: `Confirmación de Ticket: ${result.folio}`,
+      component: NewTicketEmail({
+        folio: result.folio,
+        title: result.title,
+        category: CATEGORY_LABELS[result.category],
+        priority: PRIORITY_LABELS[result.priority],
+        userName: result.creator.name || "Usuario",
+        attachments: result.attachments as { name: string; url: string }[]
+      }),
+    });
+  }
 
   revalidatePath("/dashboard/tickets");
   revalidatePath("/dashboard"); // Revalidamos el Kanban también
@@ -185,6 +208,30 @@ export async function updateTicketStatusQuick(
         },
       });
     });
+
+    // Buscamos el email del creador del ticket para notificarle
+    const ticket = await db.ticket.findUnique({
+      where: { id: ticketId },
+      include: { creator: true }
+    });
+  
+    if (ticket?.creator.email) {
+      try {
+        await sendNotification({
+          to: ticket.creator.email,
+          subject: `Actualización Ticket: ${ticket.folio}`,
+          component: TicketUpdateEmail({
+            folio: ticket.folio,
+            title: ticket.title,
+            newStatus: newStatus,
+            updatedBy: session.user.name || "Soporte",
+          }),
+        });
+      } catch (emailError) {
+        console.error("Error enviando email:", emailError);
+        // No lanzamos error para no romper la experiencia del usuario si falla el mail
+      }
+    }
 
     revalidatePath("/dashboard");
     return { success: true };
