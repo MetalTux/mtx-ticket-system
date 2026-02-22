@@ -5,6 +5,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner"; // Opcional, pero consistente con tu App
+import LoadingButton from "@/components/ui/loading-button";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
@@ -28,15 +29,18 @@ export default function LoginForm() {
       if (result?.error) {
         setError("Credenciales inválidas. Por favor, reintenta.");
         toast.error("Error de acceso");
+        setLoading(false);
       } else {
         toast.success("¡Bienvenido!");
         router.push("/dashboard");
         router.refresh();
       }
     } catch (err) {
+      toast.error("Ocurrió un error inesperado.");
       setError("Ocurrió un error inesperado.");
-    } finally {
       setLoading(false);
+    } finally {
+      //setLoading(false);
     }
   };
 
@@ -78,13 +82,22 @@ export default function LoginForm() {
         />
       </div>
 
-      <button
+      <LoadingButton 
+        type="submit" 
+        className="w-full py-3" 
+        loadingText="Validando credenciales..."
+        isLoading={loading} // Pasamos el estado manual aquí
+      >
+        Iniciar Sesión
+      </LoadingButton>
+
+      {/* <button
         type="submit"
         disabled={loading}
         className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-bold text-white bg-brand-600 hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-900 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
       >
         {loading ? "Verificando..." : "Iniciar Sesión"}
-      </button>
+      </button> */}
     </form>
   );
 }

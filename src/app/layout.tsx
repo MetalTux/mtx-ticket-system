@@ -29,11 +29,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <NextSSRPlugin routerConfig={extractRouterConfig(ourFileRouter)} />
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
+        className={`${geistSans.variable} ${geistMono.variable} bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased transition-colors duration-300`}
       >
         {children}
         <Toaster position="top-right" richColors closeButton />

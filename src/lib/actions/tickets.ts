@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import db from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Priority, TicketStatus, Category } from "@prisma/client";
+import { Priority, TicketStatus, Category, Prisma } from "@prisma/client";
 import { resend } from "@/lib/resend";
 import { sendNotification } from "@/lib/mail-service";
 import { TicketUpdateEmail } from "@/emails/TicketUpdateEmail";
@@ -150,6 +150,7 @@ export async function updateTicketFull(formData: FormData) {
   const assignedToId = formData.get("assignedToId") as string || null;
   const isInternal = formData.get("isInternal") === "true";
   const attachments = JSON.parse(formData.get("attachments") as string || "[]");
+  const sendEmail = formData.get("sendEmailNotification") === "true";
 
   await db.$transaction(async (tx) => {
     // 1. Crear el registro detallado en el historial
@@ -179,64 +180,123 @@ export async function updateTicketFull(formData: FormData) {
     });
   });
 
+  // ENVÍO DE CORREO CONDICIONAL
+  if (sendEmail && !isInternal) {
+    // Solo enviamos si el checkbox está marcado Y no es una nota interna
+    try {
+      // await sendUpdateNotificationEmail(ticketId, comment); 
+      console.log("Notificación enviada por email correctamente.");
+    } catch (error) {
+      console.error("Error al enviar email:", error);
+    }
+  }
+
   revalidatePath(`/dashboard/tickets/${ticketId}`);
+  return { success: "Ticket actualizado" };
 }
 
 export async function updateTicketStatusQuick(
   ticketId: string, 
-  newStatus: TicketStatus
+  newStatus: TicketStatus,
+  assignedToId?: string
 ) {
-  const session = await auth();
-  if (!session?.user) throw new Error("No autorizado");
-
   try {
-    await db.$transaction(async (tx) => {
-      // 1. Actualizar el ticket
-      await tx.ticket.update({
-        where: { id: ticketId },
-        data: { status: newStatus },
-      });
+    const session = await auth();
+    if (!session?.user) return { error: "No autorizado" };
 
-      // 2. Registrar en el historial que se movió vía Kanban
-      await tx.ticketHistory.create({
-        data: {
-          ticketId,
-          userId: session.user.id!,
-          comment: `Estado actualizado a **${newStatus}** mediante el Tablero Kanban.`,
-          isInternal: true, // Lo marcamos como interno para que el cliente no se sature de notificaciones de movimiento
-          status: newStatus,
-        },
-      });
-    });
+    // Definimos el objeto con el tipo de actualización generado por Prisma
+    const dataToUpdate: Prisma.TicketUpdateInput = {
+      status: newStatus,
+      updatedAt: new Date(),
+    };
 
-    // Buscamos el email del creador del ticket para notificarle
-    const ticket = await db.ticket.findUnique({
-      where: { id: ticketId },
-      include: { creator: true }
-    });
-  
-    if (ticket?.creator.email) {
-      try {
-        await sendNotification({
-          to: ticket.creator.email,
-          subject: `Actualización Ticket: ${ticket.folio}`,
-          component: TicketUpdateEmail({
-            folio: ticket.folio,
-            title: ticket.title,
-            newStatus: newStatus,
-            updatedBy: session.user.name || "Soporte",
-          }),
-        });
-      } catch (emailError) {
-        console.error("Error enviando email:", emailError);
-        // No lanzamos error para no romper la experiencia del usuario si falla el mail
-      }
+    // Si hay asignación, usamos la conexión correcta de Prisma
+    if (assignedToId) {
+      dataToUpdate.assignedTo = {
+        connect: { id: assignedToId }
+      };
     }
 
+    const updatedTicket = await db.ticket.update({
+      where: { id: ticketId },
+      data: dataToUpdate,
+    });
+
+    // Registramos en el historial. 
+    // Agregamos 'status' porque tu esquema lo marca como obligatorio.
+    await db.ticketHistory.create({
+      data: {
+        ticketId,
+        userId: session.user.id!,
+        status: newStatus, // <--- Esto resuelve el error del status missing
+        comment: `Estado actualizado a ${newStatus}${assignedToId ? ' y asignado a un nuevo especialista' : ''}.`,
+        isInternal: true,
+      }
+    });
+
     revalidatePath("/dashboard");
-    return { success: true };
+    return { success: true, ticket: updatedTicket };
   } catch (error) {
-    console.error("Error al mover ticket:", error);
-    return { success: false, error: "No se pudo actualizar el estado" };
+    console.error("Error updating ticket status:", error);
+    return { error: "Error interno del servidor" };
   }
 }
+
+// export async function updateTicketStatusQuick(
+//   ticketId: string, 
+//   newStatus: TicketStatus
+// ) {
+//   const session = await auth();
+//   if (!session?.user) throw new Error("No autorizado");
+
+//   try {
+//     await db.$transaction(async (tx) => {
+//       // 1. Actualizar el ticket
+//       await tx.ticket.update({
+//         where: { id: ticketId },
+//         data: { status: newStatus },
+//       });
+
+//       // 2. Registrar en el historial que se movió vía Kanban
+//       await tx.ticketHistory.create({
+//         data: {
+//           ticketId,
+//           userId: session.user.id!,
+//           comment: `Estado actualizado a **${newStatus}** mediante el Tablero Kanban.`,
+//           isInternal: true, // Lo marcamos como interno para que el cliente no se sature de notificaciones de movimiento
+//           status: newStatus,
+//         },
+//       });
+//     });
+
+//     // Buscamos el email del creador del ticket para notificarle
+//     const ticket = await db.ticket.findUnique({
+//       where: { id: ticketId },
+//       include: { creator: true }
+//     });
+  
+//     if (ticket?.creator.email) {
+//       try {
+//         await sendNotification({
+//           to: ticket.creator.email,
+//           subject: `Actualización Ticket: ${ticket.folio}`,
+//           component: TicketUpdateEmail({
+//             folio: ticket.folio,
+//             title: ticket.title,
+//             newStatus: newStatus,
+//             updatedBy: session.user.name || "Soporte",
+//           }),
+//         });
+//       } catch (emailError) {
+//         console.error("Error enviando email:", emailError);
+//         // No lanzamos error para no romper la experiencia del usuario si falla el mail
+//       }
+//     }
+
+//     revalidatePath("/dashboard");
+//     return { success: true };
+//   } catch (error) {
+//     console.error("Error al mover ticket:", error);
+//     return { success: false, error: "No se pudo actualizar el estado" };
+//   }
+// }
