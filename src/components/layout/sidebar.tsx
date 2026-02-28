@@ -1,6 +1,11 @@
-import Link from "next/link";
-import { auth, signOut } from "@/auth";
+// src/components/layout/sidebar.tsx
+"use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { handleSignOut } from "@/lib/actions/auth";
+
+// Mantengo tus iconos exactamente iguales
 const Icons = {
   Dashboard: () => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
@@ -27,11 +32,15 @@ const Icons = {
 interface SidebarProps {
   onClose?: () => void;
   className?: string;
+  user: {
+    name?: string | null;
+    role?: string;
+  };
 }
 
-export default async function Sidebar({ onClose, className }: SidebarProps) {
-  const session = await auth();
-  const role = session?.user?.role;
+export default function Sidebar({ onClose, className, user }: SidebarProps) {
+  const pathname = usePathname();
+  const role = user.role;
 
   const menuItems = [
     { label: "Dashboard", href: "/dashboard", icon: Icons.Dashboard, show: true },
@@ -42,8 +51,9 @@ export default async function Sidebar({ onClose, className }: SidebarProps) {
 
   return (
     <aside className={`
-      w-64 h-screen bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 
-      flex flex-col fixed left-0 top-0 transition-colors duration-300 z-50
+      bg-white dark:bg-slate-900 
+      border-r border-slate-200 dark:border-slate-800 
+      flex flex-col transition-colors duration-300
       ${className}
     `}>
       <div className="p-6">
@@ -53,29 +63,48 @@ export default async function Sidebar({ onClose, className }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto">
-        {menuItems.map((item) => item.show && (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onClose}
-            className="flex items-center gap-3 px-3 py-2 text-sm font-bold rounded-xl text-slate-600 dark:text-slate-400 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-600 dark:hover:text-brand-400 transition-all group"
-          >
-            <span className="text-slate-400 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
-              <item.icon />
-            </span>
-            {item.label}
-          </Link>
-        ))}
+        {menuItems.map((item) => {
+          const isActive = item.href === "/dashboard" 
+            ? pathname === "/dashboard" 
+            : pathname.startsWith(item.href);
+
+          return item.show && (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onClose}
+              className={`
+                flex items-center gap-3 px-3 py-2 text-sm font-bold rounded-xl transition-all group
+                ${isActive 
+                  ? "bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400" 
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-brand-600 dark:hover:text-brand-400"
+                }
+              `}
+            >
+              <span className={`
+                transition-colors
+                ${isActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-brand-600 dark:group-hover:text-brand-400"}
+              `}>
+                <item.icon />
+              </span>
+              {item.label}
+                            
+              {isActive && (
+                <div className="ml-auto w-1 h-4 rounded-full bg-brand-600 dark:bg-brand-400" />
+              )}
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
         <div className="flex items-center gap-3 px-2 py-3">
           <div className="w-9 h-9 rounded-full bg-brand-600 dark:bg-brand-500 flex items-center justify-center text-white text-sm font-black shadow-lg shadow-brand-500/20">
-            {session?.user?.name?.[0] || "U"}
+            {user.name?.[0] || "U"}
           </div>
           <div className="flex-1 overflow-hidden">
             <p className="text-sm font-bold text-slate-900 dark:text-white truncate leading-none mb-1">
-              {session?.user?.name}
+              {user.name}
             </p>
             <p className="text-[10px] text-slate-500 dark:text-slate-500 font-black uppercase tracking-widest truncate">
               {role?.replace('_', ' ')}
@@ -83,8 +112,9 @@ export default async function Sidebar({ onClose, className }: SidebarProps) {
           </div>
         </div>
         
-        <form action={async () => { "use server"; await signOut(); }}>
-          <button className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-100 dark:hover:border-red-900/30">
+        {/* Usamos la acción externa que creamos */}
+        <form action={handleSignOut}>
+          <button type="submit" className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-100 dark:hover:border-red-900/30">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
             </svg>
