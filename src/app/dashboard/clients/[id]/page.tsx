@@ -73,22 +73,30 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 </div>
               ) : (
                 client.contacts.map(contact => (
-                  <div key={contact.id} className="p-6 flex justify-between items-center group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 flex items-center justify-center font-bold text-sm">
+                  <div key={contact.id} className="p-4 sm:p-6 flex items-center group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors gap-4">
+                    {/* 1. Información del contacto (añadimos flex-1 para empujar los botones) */}
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 flex items-center justify-center font-bold text-sm flex-shrink-0">
                         {contact.name?.charAt(0)}
                       </div>
-                      <div>
-                        <p className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                          {contact.name}
-                          {!contact.isActive && <span className="text-[9px] font-black bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 px-2 py-0.5 rounded border border-red-200 dark:border-red-500/30 uppercase">Inactivo</span>}
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 dark:text-slate-100 flex flex-wrap items-center gap-2">
+                          <span className="truncate">{contact.name}</span>
+                          {!contact.isActive && (
+                            <span className="text-[9px] font-black bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 px-2 py-0.5 rounded border border-red-200 dark:border-red-500/30 uppercase flex-shrink-0">
+                              Inactivo
+                            </span>
+                          )}
                         </p>
-                        <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                          <Mail size={12} className="opacity-50"/> {contact.email}
+                        <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5 truncate">
+                          <Mail size={12} className="opacity-50 flex-shrink-0"/> 
+                          <span className="truncate">{contact.email}</span>
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+
+                    {/* 2. Botones de acción (ahora siempre quedarán a la derecha) */}
+                    <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all flex-shrink-0">
                       <Link 
                         href={`/dashboard/clients/${client.id}/contacts/${contact.id}/edit`} 
                         className="p-2 hover:bg-white dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-brand-600 border border-transparent hover:border-slate-100 dark:hover:border-slate-600 transition-all"

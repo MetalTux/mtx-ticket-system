@@ -12,6 +12,23 @@
   /* Ajustamos las fuentes que Next.js ya cargó */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-aqua-50: #f0fdfa;
+  --color-aqua-100: #ccfbf1; /* Borde claro */
+  --color-aqua-200: #99f6e4; /* Hover claro */
+  --color-aqua-300: #5eead4; /* Color vibrante principal (Dark Mode Texto y Light Mode Resaltado) */
+  --color-aqua-400: #2dd4bf;
+  --color-aqua-500: #14b8a6;
+  --color-aqua-600: #0d9488; /* Texto principal (Light Mode) */
+  --color-aqua-700: #0f766e;
+  --color-aqua-800: #115e59; /* Fondo (Dark Mode) */
+  --color-aqua-900: #134e4a; /* Fondo (Light Mode) */
+  --color-aqua-950: #042f2e;
+
+  /* Color Verde Azulado Oscuro (Tema Claro) */
+  --color-nexo-dark: #113e42;
+  /* Color Verde Menta Claro (Tema Oscuro) */
+  --color-nexo-light: #a0e3d5;
 }
 
 /* Estilos base para que el Dark Mode sea suave */
