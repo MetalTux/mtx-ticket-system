@@ -6,12 +6,10 @@ import { authConfig } from "./auth.config";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcrypt-ts";
 import { Adapter } from "@auth/core/adapters";
+import { User as NextAuthUser } from "next-auth"; // Importamos el tipo base
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
-  // Usamos 'as any' o 'as Adapter' solo si es estrictamente necesario, 
-  // pero generalmente el error desaparece si dejamos que NextAuth infiera el adaptador
-  // o si sincronizamos las versiones de @auth/core y next-auth.
   adapter: PrismaAdapter(db) as Adapter,
   session: { strategy: "jwt" },
   providers: [
@@ -23,7 +21,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: { email: credentials.email as string },
         });
 
-        // Verificamos que el usuario exista, tenga contraseña y esté activo
         if (!user || !user.password || !user.isActive) return null;
 
         const isPasswordValid = await compare(
@@ -33,15 +30,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (!isPasswordValid) return null;
 
-        // Retornamos el usuario con los campos necesarios para el JWT callback
-        return {
+        // Construimos el objeto y lo casteamos correctamente
+        // Usamos NextAuthUser para que la función acepte el retorno
+        const authenticatedUser: NextAuthUser = {
           id: user.id,
-          name: user.name ?? undefined,
+          name: user.name,
           email: user.email,
           role: user.role,
           providerId: user.providerId ?? undefined,
           clientId: user.clientId ?? undefined,
         };
+
+        return authenticatedUser;
       },
     }),
   ],

@@ -18,7 +18,7 @@ export default function LoginPage() {
               Control de Acceso
             </h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-              Bienvenido a <span className="text-brand-600 dark:text-brand-500 font-black">NEXOOPS</span>. <br />
+              Bienvenido a <span className="text-brand-600 dark:text-brand-500 font-black">GTSoft</span>. <br />
               Ingresa tus credenciales para comenzar.
             </p>
           </div>
@@ -42,7 +42,7 @@ export default function LoginPage() {
         </div>
 
         <footer className="mt-8 text-center text-[10px] uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 font-black">
-          &copy; {new Date().getFullYear()} NEXOOPS CHILE.
+          &copy; {new Date().getFullYear()} GTSoft Chile.
         </footer>
       </div>
     </main>

@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NexoOps - Gestión Operativa",
+  title: "GTSoft - Gestión Operativa",
   description: "Sistema de Soporte y Proyectos",
   icons: {
     icon: "/icon.svg", 

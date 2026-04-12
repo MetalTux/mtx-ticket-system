@@ -60,7 +60,7 @@ export default function LoginForm() {
           className="block w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:outline-none text-sm transition-all"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="ej: usuario@nexo-ops.com"
+          placeholder="ej: usuario@correo.com"
           disabled={loading}
         />
       </div>

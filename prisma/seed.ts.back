@@ -1,0 +1,93 @@
+// prisma/seed.ts
+import { PrismaClient } from '@prisma/client'
+import { hash } from 'bcrypt-ts'
+
+const prisma = new PrismaClient()
+
+async function main() {
+  console.log('🚀 Iniciando el sembrado de GTSoft...')
+
+  const provider = await prisma.providerCompany.create({
+    data: {
+      name: 'GTSoft Servicios Tecnológicos',
+    }
+  })
+
+  // 2. Usuario Admin Principal (Upsert por email)
+  const hashedPassword = await hash('admin123', 10)
+  await prisma.user.upsert({
+    where: { email: 'jrios.03@hotmail.com' },
+    update: {
+      name: 'Juan Ríos',
+      password: hashedPassword,
+      role: 'ADMIN',
+      providerId: provider.id,
+    },
+    create: {
+      email: 'jrios.03@hotmail.com',
+      name: 'Juan Ríos',
+      password: hashedPassword,
+      role: 'ADMIN',
+      providerId: provider.id,
+    }
+  })
+
+  // 3. Estados Base (Upsert por la combinación única de providerId + systemKey)
+  const statusData = [
+    { name: 'Pendiente',  systemKey: 'OPEN',        color: '#64748b', order: 1 },
+    { name: 'En Proceso', systemKey: 'IN_PROGRESS', color: '#0ea5e9', order: 2 },
+    { name: 'Escalado',   systemKey: 'ESCALATED',   color: '#f59e0b', order: 3 },
+    { name: 'Resuelto',   systemKey: 'RESOLVED',    color: '#10b981', order: 4 },
+  ]
+
+  for (const s of statusData) {
+    await prisma.ticketStatus.upsert({
+      where: { 
+        providerId_systemKey: { providerId: provider.id, systemKey: s.systemKey } 
+      },
+      update: { name: s.name, color: s.color, order: s.order },
+      create: { ...s, providerId: provider.id }
+    })
+  }
+
+  // 4. Prioridades Base
+  const priorityData = [
+    { name: 'Baja',    systemKey: 'LOW',    color: '#94a3b8', weight: 1 },
+    { name: 'Media',   systemKey: 'MEDIUM', color: '#0ea5e9', weight: 2 },
+    { name: 'Alta',    systemKey: 'HIGH',   color: '#f59e0b', weight: 3 },
+    { name: 'Urgente', systemKey: 'URGENT', color: '#ef4444', weight: 4 },
+  ]
+
+  for (const p of priorityData) {
+    await prisma.ticketPriority.upsert({
+      where: { 
+        providerId_systemKey: { providerId: provider.id, systemKey: p.systemKey } 
+      },
+      update: { name: p.name, color: p.color, weight: p.weight },
+      create: { ...p, providerId: provider.id }
+    })
+  }
+
+  // 5. Categoría Base (Upsert por prefix o name si tienes el unique constraint)
+  await prisma.ticketCategory.upsert({
+    where: { id: 'default-cat-sop' },
+    update: { name: 'Soporte General', prefix: 'SOP' },
+    create: {
+      id: 'default-cat-sop',
+      name: 'Soporte General',
+      prefix: 'SOP',
+      providerId: provider.id,
+    }
+  })
+
+  console.log('✅ Base de datos GTSoft alimentada con éxito.')
+}
+
+main()
+  .catch((e) => {
+    console.error('❌ Error en el seed:', e)
+    process.exit(1)
+  })
+  .finally(async () => {
+    await prisma.$disconnect()
+  })

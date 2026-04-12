@@ -1,17 +1,17 @@
 // Configuración de conexión para PostgreSQL (Neon)
 datasource db {
   provider = "postgresql"
-  url = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
 }
 
-// --- Enums ---
-
+// --- Enums Técnicos ---
 enum Role {
+  SUPER_ADMIN
   ADMIN
   SOPORTE
   DESARROLLO
@@ -19,137 +19,177 @@ enum Role {
   CONTACTO_CLIENTE
 }
 
-enum Priority {
-  BAJA
-  MEDIA
-  ALTA
-  URGENTE
-}
-
-enum Category {
-  SOPORTE
-  DESARROLLO
-  VENTAS
-}
-
-enum TicketStatus {
-  PENDIENTE
-  EN_PROCESO
-  ESCALADO
-  RESUELTO
-  CANCELADO
-  CERRADO
-}
-
-// --- Modelos de Identidad y Empresas ---
+// --- Modelos de Identidad ---
 
 model ProviderCompany {
   id        String   @id @default(cuid())
   name      String
   createdAt DateTime @default(now())
+  isActive  Boolean  @default(true)
   
-  users     User[]   
-  clients   ClientCompany[] 
-  tickets   Ticket[]        
+  users      User[]   
+  clients    ClientCompany[] 
+  tickets    Ticket[]
+  
+  // Maestros dinámicos por proveedor
+  statuses   TicketStatus[]
+  priorities TicketPriority[]
+  categories TicketCategory[]
 }
 
 model ClientCompany {
-  id                String          @id @default(cuid())
-  name              String
-  createdAt         DateTime        @default(now())
-  isActive          Boolean         @default(true)
+  id         String   @id @default(cuid())
+  name       String
+  createdAt  DateTime @default(now())
+  isActive   Boolean  @default(true)
   
-  // Estandarizado a providerId
-  providerId        String
-  provider          ProviderCompany @relation(fields: [providerId], references: [id])
+  providerId String
+  provider   ProviderCompany @relation(fields: [providerId], references: [id])
   
-  contacts          User[]          
-  tickets           Ticket[]
+  contacts   User[]           
+  tickets    Ticket[]
 }
 
 model User {
-  id              String         @id @default(cuid())
-  name            String?
-  email           String         @unique
-  password        String
-  role            Role           @default(CONTACTO_CLIENTE)
-  createdAt       DateTime       @default(now())
-  isActive        Boolean        @default(true)
+  id         String   @id @default(cuid())
+  name       String?
+  email      String   @unique
+  password   String
+  role       Role     @default(CONTACTO_CLIENTE)
+  createdAt  DateTime @default(now())
+  isActive   Boolean  @default(true)
 
-  // Estandarizado: providerId para empleados del servicio
-  providerId      String?
-  provider        ProviderCompany? @relation(fields: [providerId], references: [id])
+  providerId String?
+  provider   ProviderCompany? @relation(fields: [providerId], references: [id])
   
-  // Estandarizado: clientId para contactos de empresas cliente
-  clientId        String?
-  client          ClientCompany?   @relation(fields: [clientId], references: [id])
+  clientId   String?
+  client     ClientCompany?   @relation(fields: [clientId], references: [id])
 
-  assignedTickets Ticket[]         @relation("AssignedUser")
-  assignedTicketsHistory TicketHistory[]         @relation("AssignedUserHistory")
-  createdTickets  Ticket[]         @relation("CreatorUser")
-  registeredTickets  Ticket[]         @relation("TicketRegistrar")
-  historyEntries  TicketHistory[]
+  assignedTickets        Ticket[]        @relation("AssignedUser")
+  assignedTicketsHistory TicketHistory[] @relation("AssignedUserHistory")
+  createdTickets         Ticket[]        @relation("CreatorUser")
+  registeredTickets      Ticket[]        @relation("TicketRegistrar")
+  historyEntries         TicketHistory[]
 }
 
-// --- Modelos de Negocio (Tickets) ---
+// --- Modelos Maestros (Ex-Enums) ---
+
+model TicketStatus {
+  id         String   @id @default(cuid())
+  name       String   
+  systemKey  String
+  color      String   @default("#64748b") 
+  order      Int      @default(0)
+  isActive   Boolean  @default(true)
+  
+  providerId String
+  provider   ProviderCompany @relation(fields: [providerId], references: [id])
+  
+  tickets    Ticket[]
+  history    TicketHistory[]
+  @@unique([providerId, systemKey])
+}
+
+model TicketPriority {
+  id         String   @id @default(cuid())
+  name       String   
+  systemKey  String
+  color      String   @default("#64748b")
+  weight     Int      @default(0)
+  isActive   Boolean  @default(true)
+  
+  providerId String
+  provider   ProviderCompany @relation(fields: [providerId], references: [id])
+  
+  tickets    Ticket[]
+  history    TicketHistory[]
+  @@unique([providerId, systemKey])
+}
+
+model TicketCategory {
+  id         String   @id @default(cuid())
+  name       String   
+  prefix     String   
+  isActive   Boolean  @default(true)
+  
+  providerId String
+  provider   ProviderCompany @relation(fields: [providerId], references: [id])
+  
+  tickets    Ticket[]
+  history    TicketHistory[]
+  sequences  TicketSequence[]
+}
+
+// --- Negocio (Tickets) ---
 
 model Ticket {
-  id              String         @id @default(cuid())
-  folio           String         @unique
-  sequence        Int
-  title           String
-  description     String
-  status          TicketStatus   @default(PENDIENTE)
-  priority        Priority       @default(MEDIA)
-  category        Category
+  id          String   @id @default(cuid())
+  folio       String   @unique
+  sequence    Int
+  title       String
+  description String
   
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  statusId    String
+  status      TicketStatus @relation(fields: [statusId], references: [id])
+  
+  priorityId  String
+  priority    TicketPriority @relation(fields: [priorityId], references: [id])
+  
+  categoryId  String
+  category    TicketCategory @relation(fields: [categoryId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  // Llaves foráneas estandarizadas
-  providerId      String
-  provider        ProviderCompany @relation(fields: [providerId], references: [id])
+  providerId  String
+  provider    ProviderCompany @relation(fields: [providerId], references: [id])
 
-  clientId        String
-  client          ClientCompany  @relation(fields: [clientId], references: [id])
+  clientId    String
+  client      ClientCompany   @relation(fields: [clientId], references: [id])
 
-  creatorId       String
-  creator         User           @relation("CreatorUser", fields: [creatorId], references: [id])
+  creatorId   String
+  creator     User            @relation("CreatorUser", fields: [creatorId], references: [id])
 
-  createdById     String
-  createdBy       User           @relation("TicketRegistrar", fields: [createdById], references: [id])
+  createdById String
+  createdBy   User            @relation("TicketRegistrar", fields: [createdById], references: [id])
 
-  assignedToId    String?
-  assignedTo      User?          @relation("AssignedUser", fields: [assignedToId], references: [id])
+  assignedToId String?
+  assignedTo   User?          @relation("AssignedUser", fields: [assignedToId], references: [id])
 
-  attachments     Json?
-
-  history         TicketHistory[]
+  attachments Json?
+  history     TicketHistory[]
 }
 
 model TicketSequence {
-  category        Category @id
-  nextVal         Int      @default(1)
+  id         String   @id @default(cuid())
+  categoryId String
+  category   TicketCategory @relation(fields: [categoryId], references: [id])
+  nextVal    Int      @default(1)
 }
 
 model TicketHistory {
-  id          String       @id @default(cuid())
-  createdAt   DateTime     @default(now())
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
   
   ticketId    String
-  ticket      Ticket       @relation(fields: [ticketId], references: [id])
+  ticket      Ticket   @relation(fields: [ticketId], references: [id])
   
-  userId      String       // Quién realiza la acción
-  user        User         @relation(fields: [userId], references: [id])
+  userId      String   
+  user        User     @relation(fields: [userId], references: [id])
   
-  status      TicketStatus
-  comment     String?      @db.Text
-  attachments Json?        // Para nuevos adjuntos en esta actualización
-  isInternal  Boolean      @default(false)
+  statusId    String
+  status      TicketStatus @relation(fields: [statusId], references: [id])
+  
+  comment     String?  @db.Text
+  attachments Json?    
+  isInternal  Boolean  @default(false)
 
-  // --- NUEVOS CAMPOS PARA RASTREAR CAMBIOS ---
-  assignedToId String?     // Si se cambió el asignado en este paso
-  assignedTo   User?       @relation("AssignedUserHistory", fields: [assignedToId], references: [id])
-  priority     Priority?   // Si se cambió la prioridad en este paso
-  category     Category?   // Si se cambió la categoría en este paso
+  assignedToId String?  
+  assignedTo   User?   @relation("AssignedUserHistory", fields: [assignedToId], references: [id])
+  
+  priorityId   String?
+  priority     TicketPriority? @relation(fields: [priorityId], references: [id])
+  
+  categoryId   String?
+  category     TicketCategory? @relation(fields: [categoryId], references: [id])
 }

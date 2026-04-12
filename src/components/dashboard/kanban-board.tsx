@@ -3,24 +3,22 @@
 
 import { useState } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-import { TicketStatus, Priority, Category, User } from "@prisma/client";
 import { updateTicketStatusQuick } from "@/lib/actions/tickets";
-import { STATUS_LABELS, PRIORITY_LABELS, CATEGORY_LABELS } from "@/enums/constantes";
 import { toast } from "sonner";
 import Link from "next/link";
-import { Building2, Clock, Tag } from "lucide-react";
+import { Building2, Tag } from "lucide-react";
 import EscalationModal from "@/components/dashboard/escalation-modal";
-
-const COLUMNS: TicketStatus[] = ["PENDIENTE", "EN_PROCESO", "ESCALADO", "RESUELTO"];
+import { TicketStatus } from "@prisma/client";
 
 interface KanbanTicket {
   id: string;
   folio: string;
   title: string;
-  status: TicketStatus;
-  priority: Priority;
-  category: Category;
-  createdAt: Date | string;
+  statusId: string;        // Usamos ID para la lógica
+  statusName: string;      // Para mostrar
+  priority: string;
+  priorityColor?: string;
+  category: string;
   client: { name: string };
 }
 
@@ -31,17 +29,21 @@ type SimpleUser = {
 
 interface KanbanBoardProps {
   initialTickets: KanbanTicket[];
-  supportUsers: SimpleUser[]; // Debes pasar los técnicos desde el server component
+  supportUsers: SimpleUser[];
+  statuses: TicketStatus[]; // Traemos los estados reales de la DB
 }
 
-export default function KanbanBoard({ initialTickets, supportUsers }: KanbanBoardProps) {
+export default function KanbanBoard({ initialTickets, supportUsers, statuses }: KanbanBoardProps) {
   const [tickets, setTickets] = useState(initialTickets);
   
-  // Estado para controlar el modal de escalado
   const [escalationData, setEscalationData] = useState<{
     ticketId: string;
+    targetStatusId: string;
     isOpen: boolean;
-  }>({ ticketId: "", isOpen: false });
+  }>({ ticketId: "", targetStatusId: "", isOpen: false });
+
+  // Ordenamos los estados por el campo 'order' definido en la DB
+  const sortedColumns = [...statuses].sort((a, b) => a.order - b.order);
 
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result;
@@ -49,30 +51,31 @@ export default function KanbanBoard({ initialTickets, supportUsers }: KanbanBoar
     if (!destination) return;
     if (destination.droppableId === source.droppableId) return;
 
-    const newStatus = destination.droppableId as TicketStatus;
+    const targetStatusId = destination.droppableId;
+    const targetStatus = statuses.find(s => s.id === targetStatusId);
 
-    // INTERCEPCIÓN: Si el destino es ESCALADO, abrimos el modal
-    if (newStatus === "ESCALADO") {
-      setEscalationData({ ticketId: draggableId, isOpen: true });
+    // INTERCEPCIÓN: Si el estado destino tiene la systemKey 'ESCALATED'
+    if (targetStatus?.systemKey === 'ESCALATED') {
+      setEscalationData({ ticketId: draggableId, targetStatusId: targetStatusId, isOpen: true });
       return;
     }
 
-    // Lógica normal para otros estados
-    await handleStatusUpdate(draggableId, newStatus);
+    await handleStatusUpdate(draggableId, targetStatusId);
   };
 
-  const handleStatusUpdate = async (ticketId: string, newStatus: TicketStatus, assignedToId?: string) => {
-    // Actualización Optimista
+  const handleStatusUpdate = async (ticketId: string, statusId: string, assignedToId?: string) => {
     const previousTickets = [...tickets];
-    const updatedTickets = tickets.map((t) =>
-      t.id === ticketId ? { ...t, status: newStatus } : t
-    );
-    setTickets(updatedTickets);
+    const targetStatus = statuses.find(s => s.id === statusId);
+    
+    // Actualización Optimista
+    setTickets(prev => prev.map((t) =>
+      t.id === ticketId ? { ...t, statusId: statusId, statusName: targetStatus?.name || t.statusName } : t
+    ));
 
-    const response = await updateTicketStatusQuick(ticketId, newStatus, assignedToId);
+    const response = await updateTicketStatusQuick(ticketId, statusId, assignedToId);
 
     if (response.success) {
-      toast.success(`Ticket movido a ${STATUS_LABELS[newStatus]}`);
+      toast.success(`Ticket movido a ${targetStatus?.name}`);
     } else {
       toast.error("Error al actualizar el estado");
       setTickets(previousTickets);
@@ -80,52 +83,41 @@ export default function KanbanBoard({ initialTickets, supportUsers }: KanbanBoar
   };
 
   const handleEscalationConfirm = async (userId: string) => {
-    const tId = escalationData.ticketId;
-    setEscalationData({ ticketId: "", isOpen: false });
-    await handleStatusUpdate(tId, "ESCALADO", userId);
-  };
-
-  const getPriorityStyles = (priority: Priority) => {
-    switch (priority) {
-      case "URGENTE": 
-        return "bg-red-100 text-red-700 border-red-200 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/30";
-      case "ALTA": 
-        return "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/20 dark:text-orange-400 dark:border-orange-500/30";
-      case "MEDIA": 
-        return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/30";
-      case "BAJA": 
-        return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/30";
-      default: 
-        return "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700";
-    }
+    const { ticketId, targetStatusId } = escalationData;
+    setEscalationData({ ticketId: "", targetStatusId: "", isOpen: false });
+    await handleStatusUpdate(ticketId, targetStatusId, userId);
   };
 
   return (
     <>
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-6 overflow-x-auto pb-8 min-h-[75vh] scrollbar-hide transition-colors duration-300">
-          {COLUMNS.map((columnId) => (
-            <div key={columnId} className="flex-1 min-w-[300px] flex flex-col">
+        <div className="flex gap-6 overflow-x-auto pb-8 min-h-[75vh] scrollbar-hide">
+          {sortedColumns.map((col) => (
+            <div key={col.id} className="flex-1 min-w-[320px] flex flex-col">
+              {/* Cabecera de Columna Dinámica */}
               <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 mb-4 px-2 flex justify-between items-center">
-                {STATUS_LABELS[columnId]}
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color }} />
+                  {col.name}
+                </div>
                 <span className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-md text-[10px] font-bold shadow-sm">
-                  {tickets.filter(t => t.status === columnId).length}
+                  {tickets.filter(t => t.statusId === col.id).length}
                 </span>
               </h3>
 
-              <Droppable droppableId={columnId}>
+              <Droppable droppableId={col.id}>
                 {(provided, snapshot) => (
                   <div 
                     {...provided.droppableProps} 
                     ref={provided.innerRef} 
-                    className={`flex-1 space-y-4 rounded-2xl p-2 transition-colors duration-300 min-h-[500px] border border-transparent ${
+                    className={`flex-1 space-y-4 rounded-2xl p-2 transition-all duration-300 min-h-[500px] border border-transparent ${
                       snapshot.isDraggingOver 
                         ? 'bg-slate-200/50 dark:bg-slate-800/40 border-slate-300 dark:border-slate-700' 
                         : 'bg-slate-100/40 dark:bg-slate-900/40'
                     }`}
                   >
                     {tickets
-                      .filter((t) => t.status === columnId)
+                      .filter((t) => t.statusId === col.id)
                       .map((ticket, index) => (
                         <Draggable key={ticket.id} draggableId={ticket.id} index={index}>
                           {(provided, snapshot) => (
@@ -135,8 +127,8 @@ export default function KanbanBoard({ initialTickets, supportUsers }: KanbanBoar
                               {...provided.dragHandleProps}
                               className={`group p-4 rounded-xl bg-white dark:bg-slate-800 border transition-all duration-200 ${
                                 snapshot.isDragging 
-                                  ? 'rotate-2 shadow-2xl border-brand-500 dark:border-brand-400 scale-105 z-50 ring-4 ring-brand-500/10' 
-                                  : 'border-slate-200 dark:border-slate-700/50 shadow-sm hover:border-brand-300 dark:hover:border-slate-600'
+                                  ? 'rotate-2 shadow-2xl border-brand-500 scale-105 z-50 ring-4 ring-brand-500/10' 
+                                  : 'border-slate-200 dark:border-slate-700/50 shadow-sm hover:border-brand-300'
                               }`}
                             >
                               <Link href={`/dashboard/tickets/${ticket.id}`} className="space-y-3 block">
@@ -144,12 +136,19 @@ export default function KanbanBoard({ initialTickets, supportUsers }: KanbanBoar
                                   <span className="text-[10px] font-black bg-slate-900 text-white dark:bg-slate-700 px-2 py-0.5 rounded shadow-sm tracking-tight uppercase">
                                     {ticket.folio}
                                   </span>
-                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border tracking-wide uppercase shadow-sm ${getPriorityStyles(ticket.priority)}`}>
-                                    {PRIORITY_LABELS[ticket.priority]}
+                                  <span 
+                                    className="text-[9px] font-black px-2 py-0.5 rounded-md border tracking-wide uppercase shadow-sm"
+                                    style={{ 
+                                      backgroundColor: `${ticket.priorityColor}15`,
+                                      color: ticket.priorityColor,
+                                      borderColor: `${ticket.priorityColor}30`
+                                    }}
+                                  >
+                                    {ticket.priority}
                                   </span>
                                 </div>
 
-                                <p className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+                                <p className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug group-hover:text-brand-600 transition-colors">
                                   {ticket.title}
                                 </p>
 
@@ -158,9 +157,9 @@ export default function KanbanBoard({ initialTickets, supportUsers }: KanbanBoar
                                     <Building2 size={12} className="shrink-0 text-slate-400" />
                                     <span className="truncate font-medium">{ticket.client.name}</span>
                                   </div>
-                                  <div className="flex items-center gap-1 text-[9px] font-black text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/10 px-2 py-0.5 rounded border border-brand-100 dark:border-brand-500/20 shrink-0 uppercase shadow-sm">
+                                  <div className="flex items-center gap-1 text-[9px] font-black text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/10 px-2 py-0.5 rounded border shrink-0 uppercase">
                                     <Tag size={10} />
-                                    <span>{CATEGORY_LABELS[ticket.category]}</span>
+                                    <span>{ticket.category}</span>
                                   </div>
                                 </div>
                               </Link>
@@ -177,16 +176,389 @@ export default function KanbanBoard({ initialTickets, supportUsers }: KanbanBoar
         </div>
       </DragDropContext>
 
-      {/* Modal de Escalado */}
       <EscalationModal 
         isOpen={escalationData.isOpen}
-        onClose={() => setEscalationData({ ticketId: "", isOpen: false })}
+        onClose={() => setEscalationData({ ticketId: "", targetStatusId: "", isOpen: false })}
         onConfirm={handleEscalationConfirm}
         supportUsers={supportUsers}
       />
     </>
   );
 }
+
+
+// // src/components/dashboard/kanban-board.tsx
+// "use client";
+
+// import { useState } from "react";
+// import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+// import { updateTicketStatusQuick } from "@/lib/actions/tickets";
+// import { toast } from "sonner";
+// import Link from "next/link";
+// import { Building2, Tag } from "lucide-react";
+// import EscalationModal from "@/components/dashboard/escalation-modal";
+
+// // Definimos las columnas por nombre (asumiendo que existen en tu Seed)
+// const COLUMNS = ["Pendiente", "En Proceso", "Escalado", "Resuelto"];
+
+// interface KanbanTicket {
+//   id: string;
+//   folio: string;
+//   title: string;
+//   status: string;        // Ahora es string (nombre del estado)
+//   statusColor?: string;  // Color desde la BD
+//   priority: string;      // Ahora es string (nombre de prioridad)
+//   priorityColor?: string;// Color desde la BD
+//   category: string;      // Ahora es string (nombre de categoría)
+//   createdAt: Date | string;
+//   client: { name: string };
+// }
+
+// type SimpleUser = {
+//   id: string;
+//   name: string | null;
+// };
+
+// interface KanbanBoardProps {
+//   initialTickets: KanbanTicket[];
+//   supportUsers: SimpleUser[];
+// }
+
+// export default function KanbanBoard({ initialTickets, supportUsers }: KanbanBoardProps) {
+//   const [tickets, setTickets] = useState(initialTickets);
+  
+//   const [escalationData, setEscalationData] = useState<{
+//     ticketId: string;
+//     isOpen: boolean;
+//   }>({ ticketId: "", isOpen: false });
+
+//   const onDragEnd = async (result: DropResult) => {
+//     const { destination, source, draggableId } = result;
+
+//     if (!destination) return;
+//     if (destination.droppableId === source.droppableId) return;
+
+//     const newStatusName = destination.droppableId; // Es el nombre del estado
+
+//     // INTERCEPCIÓN: Si el destino es ESCALADO
+//     if (newStatusName === "Escalado") {
+//       setEscalationData({ ticketId: draggableId, isOpen: true });
+//       return;
+//     }
+
+//     await handleStatusUpdate(draggableId, newStatusName);
+//   };
+
+//   const handleStatusUpdate = async (ticketId: string, newStatusName: string, assignedToId?: string) => {
+//     const previousTickets = [...tickets];
+    
+//     // Actualización Optimista
+//     const updatedTickets = tickets.map((t) =>
+//       t.id === ticketId ? { ...t, status: newStatusName } : t
+//     );
+//     setTickets(updatedTickets);
+
+//     // IMPORTANTE: Tu Server Action ahora debe recibir el NOMBRE o ID del estado
+//     const response = await updateTicketStatusQuick(ticketId, newStatusName, assignedToId);
+
+//     if (response.success) {
+//       toast.success(`Ticket movido a ${newStatusName}`);
+//     } else {
+//       toast.error("Error al actualizar el estado");
+//       setTickets(previousTickets);
+//     }
+//   };
+
+//   const handleEscalationConfirm = async (userId: string) => {
+//     const tId = escalationData.ticketId;
+//     setEscalationData({ ticketId: "", isOpen: false });
+//     await handleStatusUpdate(tId, "Escalado", userId);
+//   };
+
+//   return (
+//     <>
+//       <DragDropContext onDragEnd={onDragEnd}>
+//         <div className="flex gap-6 overflow-x-auto pb-8 min-h-[75vh] scrollbar-hide">
+//           {COLUMNS.map((columnName) => (
+//             <div key={columnName} className="flex-1 min-w-[300px] flex flex-col">
+//               <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 mb-4 px-2 flex justify-between items-center">
+//                 {columnName}
+//                 <span className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-md text-[10px] font-bold shadow-sm">
+//                   {tickets.filter(t => t.status === columnName).length}
+//                 </span>
+//               </h3>
+
+//               <Droppable droppableId={columnName}>
+//                 {(provided, snapshot) => (
+//                   <div 
+//                     {...provided.droppableProps} 
+//                     ref={provided.innerRef} 
+//                     className={`flex-1 space-y-4 rounded-2xl p-2 transition-colors duration-300 min-h-[500px] border border-transparent ${
+//                       snapshot.isDraggingOver 
+//                         ? 'bg-slate-200/50 dark:bg-slate-800/40 border-slate-300 dark:border-slate-700' 
+//                         : 'bg-slate-100/40 dark:bg-slate-900/40'
+//                     }`}
+//                   >
+//                     {tickets
+//                       .filter((t) => t.status === columnName)
+//                       .map((ticket, index) => (
+//                         <Draggable key={ticket.id} draggableId={ticket.id} index={index}>
+//                           {(provided, snapshot) => (
+//                             <div
+//                               ref={provided.innerRef}
+//                               {...provided.draggableProps}
+//                               {...provided.dragHandleProps}
+//                               className={`group p-4 rounded-xl bg-white dark:bg-slate-800 border transition-all duration-200 ${
+//                                 snapshot.isDragging 
+//                                   ? 'rotate-2 shadow-2xl border-brand-500 dark:border-brand-400 scale-105 z-50 ring-4 ring-brand-500/10' 
+//                                   : 'border-slate-200 dark:border-slate-700/50 shadow-sm hover:border-brand-300 dark:hover:border-slate-600'
+//                               }`}
+//                             >
+//                               <Link href={`/dashboard/tickets/${ticket.id}`} className="space-y-3 block">
+//                                 <div className="flex justify-between items-start gap-2">
+//                                   <span className="text-[10px] font-black bg-slate-900 text-white dark:bg-slate-700 px-2 py-0.5 rounded shadow-sm tracking-tight uppercase">
+//                                     {ticket.folio}
+//                                   </span>
+//                                   {/* Prioridad con color dinámico de la BD */}
+//                                   <span 
+//                                     className="text-[9px] font-black px-2 py-0.5 rounded-md border tracking-wide uppercase shadow-sm"
+//                                     style={{ 
+//                                       backgroundColor: `${ticket.priorityColor}15`,
+//                                       color: ticket.priorityColor,
+//                                       borderColor: `${ticket.priorityColor}30`
+//                                     }}
+//                                   >
+//                                     {ticket.priority}
+//                                   </span>
+//                                 </div>
+
+//                                 <p className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+//                                   {ticket.title}
+//                                 </p>
+
+//                                 <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-700/50 gap-2">
+//                                   <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 min-w-0 flex-1">
+//                                     <Building2 size={12} className="shrink-0 text-slate-400" />
+//                                     <span className="truncate font-medium">{ticket.client.name}</span>
+//                                   </div>
+//                                   <div className="flex items-center gap-1 text-[9px] font-black text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/10 px-2 py-0.5 rounded border border-brand-100 dark:border-brand-500/20 shrink-0 uppercase shadow-sm">
+//                                     <Tag size={10} />
+//                                     <span>{ticket.category}</span>
+//                                   </div>
+//                                 </div>
+//                               </Link>
+//                             </div>
+//                           )}
+//                         </Draggable>
+//                       ))}
+//                     {provided.placeholder}
+//                   </div>
+//                 )}
+//               </Droppable>
+//             </div>
+//           ))}
+//         </div>
+//       </DragDropContext>
+
+//       <EscalationModal 
+//         isOpen={escalationData.isOpen}
+//         onClose={() => setEscalationData({ ticketId: "", isOpen: false })}
+//         onConfirm={handleEscalationConfirm}
+//         supportUsers={supportUsers}
+//       />
+//     </>
+//   );
+// }
+
+// // src/components/dashboard/kanban-board.tsx
+// "use client";
+
+// import { useState } from "react";
+// import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+// import { TicketStatus, Priority, Category, User } from "@prisma/client";
+// import { updateTicketStatusQuick } from "@/lib/actions/tickets";
+// import { STATUS_LABELS, PRIORITY_LABELS, CATEGORY_LABELS } from "@/enums/constantes";
+// import { toast } from "sonner";
+// import Link from "next/link";
+// import { Building2, Clock, Tag } from "lucide-react";
+// import EscalationModal from "@/components/dashboard/escalation-modal";
+
+// const COLUMNS: TicketStatus[] = ["PENDIENTE", "EN_PROCESO", "ESCALADO", "RESUELTO"];
+
+// interface KanbanTicket {
+//   id: string;
+//   folio: string;
+//   title: string;
+//   status: TicketStatus;
+//   priority: Priority;
+//   category: Category;
+//   createdAt: Date | string;
+//   client: { name: string };
+// }
+
+// type SimpleUser = {
+//   id: string;
+//   name: string | null;
+// };
+
+// interface KanbanBoardProps {
+//   initialTickets: KanbanTicket[];
+//   supportUsers: SimpleUser[]; // Debes pasar los técnicos desde el server component
+// }
+
+// export default function KanbanBoard({ initialTickets, supportUsers }: KanbanBoardProps) {
+//   const [tickets, setTickets] = useState(initialTickets);
+  
+//   // Estado para controlar el modal de escalado
+//   const [escalationData, setEscalationData] = useState<{
+//     ticketId: string;
+//     isOpen: boolean;
+//   }>({ ticketId: "", isOpen: false });
+
+//   const onDragEnd = async (result: DropResult) => {
+//     const { destination, source, draggableId } = result;
+
+//     if (!destination) return;
+//     if (destination.droppableId === source.droppableId) return;
+
+//     const newStatus = destination.droppableId as TicketStatus;
+
+//     // INTERCEPCIÓN: Si el destino es ESCALADO, abrimos el modal
+//     if (newStatus === "ESCALADO") {
+//       setEscalationData({ ticketId: draggableId, isOpen: true });
+//       return;
+//     }
+
+//     // Lógica normal para otros estados
+//     await handleStatusUpdate(draggableId, newStatus);
+//   };
+
+//   const handleStatusUpdate = async (ticketId: string, newStatus: TicketStatus, assignedToId?: string) => {
+//     // Actualización Optimista
+//     const previousTickets = [...tickets];
+//     const updatedTickets = tickets.map((t) =>
+//       t.id === ticketId ? { ...t, status: newStatus } : t
+//     );
+//     setTickets(updatedTickets);
+
+//     const response = await updateTicketStatusQuick(ticketId, newStatus, assignedToId);
+
+//     if (response.success) {
+//       toast.success(`Ticket movido a ${STATUS_LABELS[newStatus]}`);
+//     } else {
+//       toast.error("Error al actualizar el estado");
+//       setTickets(previousTickets);
+//     }
+//   };
+
+//   const handleEscalationConfirm = async (userId: string) => {
+//     const tId = escalationData.ticketId;
+//     setEscalationData({ ticketId: "", isOpen: false });
+//     await handleStatusUpdate(tId, "ESCALADO", userId);
+//   };
+
+//   const getPriorityStyles = (priority: Priority) => {
+//     switch (priority) {
+//       case "URGENTE": 
+//         return "bg-red-100 text-red-700 border-red-200 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/30";
+//       case "ALTA": 
+//         return "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/20 dark:text-orange-400 dark:border-orange-500/30";
+//       case "MEDIA": 
+//         return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/30";
+//       case "BAJA": 
+//         return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/30";
+//       default: 
+//         return "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700";
+//     }
+//   };
+
+//   return (
+//     <>
+//       <DragDropContext onDragEnd={onDragEnd}>
+//         <div className="flex gap-6 overflow-x-auto pb-8 min-h-[75vh] scrollbar-hide transition-colors duration-300">
+//           {COLUMNS.map((columnId) => (
+//             <div key={columnId} className="flex-1 min-w-[300px] flex flex-col">
+//               <h3 className="font-black text-[11px] uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 mb-4 px-2 flex justify-between items-center">
+//                 {STATUS_LABELS[columnId]}
+//                 <span className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-md text-[10px] font-bold shadow-sm">
+//                   {tickets.filter(t => t.status === columnId).length}
+//                 </span>
+//               </h3>
+
+//               <Droppable droppableId={columnId}>
+//                 {(provided, snapshot) => (
+//                   <div 
+//                     {...provided.droppableProps} 
+//                     ref={provided.innerRef} 
+//                     className={`flex-1 space-y-4 rounded-2xl p-2 transition-colors duration-300 min-h-[500px] border border-transparent ${
+//                       snapshot.isDraggingOver 
+//                         ? 'bg-slate-200/50 dark:bg-slate-800/40 border-slate-300 dark:border-slate-700' 
+//                         : 'bg-slate-100/40 dark:bg-slate-900/40'
+//                     }`}
+//                   >
+//                     {tickets
+//                       .filter((t) => t.status === columnId)
+//                       .map((ticket, index) => (
+//                         <Draggable key={ticket.id} draggableId={ticket.id} index={index}>
+//                           {(provided, snapshot) => (
+//                             <div
+//                               ref={provided.innerRef}
+//                               {...provided.draggableProps}
+//                               {...provided.dragHandleProps}
+//                               className={`group p-4 rounded-xl bg-white dark:bg-slate-800 border transition-all duration-200 ${
+//                                 snapshot.isDragging 
+//                                   ? 'rotate-2 shadow-2xl border-brand-500 dark:border-brand-400 scale-105 z-50 ring-4 ring-brand-500/10' 
+//                                   : 'border-slate-200 dark:border-slate-700/50 shadow-sm hover:border-brand-300 dark:hover:border-slate-600'
+//                               }`}
+//                             >
+//                               <Link href={`/dashboard/tickets/${ticket.id}`} className="space-y-3 block">
+//                                 <div className="flex justify-between items-start gap-2">
+//                                   <span className="text-[10px] font-black bg-slate-900 text-white dark:bg-slate-700 px-2 py-0.5 rounded shadow-sm tracking-tight uppercase">
+//                                     {ticket.folio}
+//                                   </span>
+//                                   <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border tracking-wide uppercase shadow-sm ${getPriorityStyles(ticket.priority)}`}>
+//                                     {PRIORITY_LABELS[ticket.priority]}
+//                                   </span>
+//                                 </div>
+
+//                                 <p className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+//                                   {ticket.title}
+//                                 </p>
+
+//                                 <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-700/50 gap-2">
+//                                   <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 min-w-0 flex-1">
+//                                     <Building2 size={12} className="shrink-0 text-slate-400" />
+//                                     <span className="truncate font-medium">{ticket.client.name}</span>
+//                                   </div>
+//                                   <div className="flex items-center gap-1 text-[9px] font-black text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/10 px-2 py-0.5 rounded border border-brand-100 dark:border-brand-500/20 shrink-0 uppercase shadow-sm">
+//                                     <Tag size={10} />
+//                                     <span>{CATEGORY_LABELS[ticket.category]}</span>
+//                                   </div>
+//                                 </div>
+//                               </Link>
+//                             </div>
+//                           )}
+//                         </Draggable>
+//                       ))}
+//                     {provided.placeholder}
+//                   </div>
+//                 )}
+//               </Droppable>
+//             </div>
+//           ))}
+//         </div>
+//       </DragDropContext>
+
+//       {/* Modal de Escalado */}
+//       <EscalationModal 
+//         isOpen={escalationData.isOpen}
+//         onClose={() => setEscalationData({ ticketId: "", isOpen: false })}
+//         onConfirm={handleEscalationConfirm}
+//         supportUsers={supportUsers}
+//       />
+//     </>
+//   );
+// }
 
 // // src/components/dashboard/kanban-board.tsx
 // "use client";
