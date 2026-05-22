@@ -15,6 +15,7 @@ import {
 import * as React from "react";
 
 interface NewTicketEmailProps {
+  ticketId: string;
   folio: string;
   title: string;
   category: string;
@@ -24,6 +25,7 @@ interface NewTicketEmailProps {
 }
 
 export const NewTicketEmail = ({
+  ticketId,
   folio,
   title,
   category,
@@ -79,7 +81,7 @@ export const NewTicketEmail = ({
 
           <Button
             style={button}
-            href={`${process.env.NEXTAUTH_URL}/dashboard/tickets/`}
+            href={`${process.env.NEXTAUTH_URL}/dashboard/tickets/${ticketId}`}
           >
             Seguir mi Ticket
           </Button>
