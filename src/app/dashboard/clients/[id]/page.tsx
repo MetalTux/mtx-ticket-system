@@ -2,7 +2,7 @@
 import db from "@/lib/db";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { Building2, Users, ArrowLeft, Edit, Mail } from "lucide-react";
+import { Building2, Users, ArrowLeft, Edit, Mail, Shield, Clock } from "lucide-react";
 import DeleteContactButton from "@/components/contacts/delete-contact-button";
 import { auth } from "@/auth";
 
@@ -17,6 +17,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
   const client = await db.clientCompany.findUnique({
     where: { id },
     include: {
+      supportLevel: true, // Incluimos el Nivel
       contacts: { orderBy: { name: "asc" } },
       _count: { select: { tickets: true } }
     }
@@ -30,7 +31,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         <Link href="/dashboard/clients" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-brand-600 transition-all font-bold group">
           <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> Volver a la lista
         </Link>
-        <Link href={`/dashboard/clients/${client.id}/edit`} className="btn-secondary py-2 px-4 flex items-center gap-2 text-xs font-black uppercase tracking-widest">
+        <Link href={`/dashboard/clients/${client.id}/edit`} className="btn-secondary py-2 px-4 flex items-center gap-2 text-xs font-black uppercase tracking-widest border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg hover:bg-slate-50">
           <Edit size={14} /> Editar Empresa
         </Link>
       </div>
@@ -74,7 +75,6 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               ) : (
                 client.contacts.map(contact => (
                   <div key={contact.id} className="p-4 sm:p-6 flex items-center group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors gap-4">
-                    {/* 1. Información del contacto (añadimos flex-1 para empujar los botones) */}
                     <div className="flex items-center gap-4 flex-1 min-w-0">
                       <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 flex items-center justify-center font-bold text-sm flex-shrink-0">
                         {contact.name?.charAt(0)}
@@ -95,7 +95,6 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                       </div>
                     </div>
 
-                    {/* 2. Botones de acción (ahora siempre quedarán a la derecha) */}
                     <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all flex-shrink-0">
                       <Link 
                         href={`/dashboard/clients/${client.id}/contacts/${contact.id}/edit`} 
@@ -123,13 +122,34 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           </div>
           
           <div className="card-module bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 p-6 space-y-6">
-            <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Identificación Interna</h3>
-            <div className="space-y-4">
-              <div className="space-y-1">
+            <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] border-b border-slate-100 dark:border-slate-800 pb-2">Identificación Interna</h3>
+            
+            <div className="space-y-5">
+              {/* Nuevo Bloque: Nivel de Soporte */}
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight flex items-center gap-1.5 mb-1.5">
+                  <Shield size={12} className="text-brand-500" /> Nivel de Soporte
+                </span>
+                <p className="text-sm font-black text-slate-800 dark:text-slate-200">
+                  {client.supportLevel ? client.supportLevel.name : "Sin nivel asignado"}
+                </p>
+              </div>
+
+              {/* Nuevo Bloque: Minutos Mensuales */}
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight flex items-center gap-1.5 mb-1.5">
+                  <Clock size={12} className="text-brand-500" /> Bolsa de Minutos
+                </span>
+                <p className="text-sm font-black text-slate-800 dark:text-slate-200">
+                  {client.monthlyMinutes === 0 ? "Ilimitado" : `${client.monthlyMinutes} minutos / mes`}
+                </p>
+              </div>
+
+              <div className="space-y-1 pt-2 border-t border-slate-50 dark:border-slate-800">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">ID de Base de Datos</span>
                 <p className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-slate-500 dark:text-slate-400 break-all">{client.id}</p>
               </div>
-              <div className="flex justify-between items-end border-t border-slate-50 dark:border-slate-800 pt-4">
+              <div className="flex justify-between items-end">
                 <span className="text-xs font-bold text-slate-500">Fecha de Alta:</span>
                 <span className="text-sm font-black text-slate-700 dark:text-slate-300">{new Date(client.createdAt).toLocaleDateString()}</span>
               </div>

@@ -10,12 +10,22 @@ export async function createClientCompany(formData: FormData) {
   if (!session?.user || session.user.role === "CONTACTO_CLIENTE") return { error: "No autorizado" };
 
   const name = formData.get("name") as string;
+  const supportLevelId = formData.get("supportLevelId") as string;
+  const monthlyMinutesStr = formData.get("monthlyMinutes") as string;
+  
   const providerId = session.user.providerId;
 
   if (!name || !providerId) return { error: "Datos incompletos" };
 
+  const dataToSave = {
+    name,
+    providerId,
+    supportLevelId: supportLevelId === "none" || !supportLevelId ? null : supportLevelId,
+    monthlyMinutes: monthlyMinutesStr ? parseInt(monthlyMinutesStr, 10) : 0
+  };
+
   try {
-    await db.clientCompany.create({ data: { name, providerId } });
+    await db.clientCompany.create({ data: dataToSave });
     revalidatePath("/dashboard/clients");
     return { success: "Empresa creada exitosamente" };
   } catch (e) {
@@ -26,11 +36,20 @@ export async function createClientCompany(formData: FormData) {
 export async function updateClientCompany(id: string, formData: FormData) {
   const name = formData.get("name") as string;
   const isActive = formData.get("isActive") === "on";
+  const supportLevelId = formData.get("supportLevelId") as string;
+  const monthlyMinutesStr = formData.get("monthlyMinutes") as string;
+
+  const dataToSave = {
+    name,
+    isActive,
+    supportLevelId: supportLevelId === "none" || !supportLevelId ? null : supportLevelId,
+    monthlyMinutes: monthlyMinutesStr ? parseInt(monthlyMinutesStr, 10) : 0
+  };
 
   try {
     await db.clientCompany.update({
       where: { id },
-      data: { name, isActive },
+      data: dataToSave,
     });
     revalidatePath("/dashboard/clients");
     return { success: "Información actualizada" };

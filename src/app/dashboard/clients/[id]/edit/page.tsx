@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import ClientForm from "@/components/clients/client-form";
 import { ArrowLeft } from "lucide-react";
+import { auth } from "@/auth";
 
-export default async function EditClientPage({ params }: { params: { id: string } }) {
+export default async function EditClientPage({ params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
   const { id } = await params;
   
   const client = await db.clientCompany.findUnique({
@@ -13,6 +15,12 @@ export default async function EditClientPage({ params }: { params: { id: string 
   });
 
   if (!client) notFound();
+
+  const supportLevels = await db.supportLevel.findMany({
+    where: { providerId: session?.user?.providerId, isActive: true },
+    select: { id: true, name: true, description: true },
+    orderBy: { name: 'asc' }
+  });
 
   return (
     <>
@@ -23,7 +31,7 @@ export default async function EditClientPage({ params }: { params: { id: string 
           <ArrowLeft size={16} /> Volver a la lista
         </Link>
         <h1 className="text-2xl font-bold mb-6">Editar Empresa: {client.name}</h1>
-        <ClientForm initialData={client} />
+        <ClientForm initialData={client} supportLevels={supportLevels} />
       </div>
     </>
   );

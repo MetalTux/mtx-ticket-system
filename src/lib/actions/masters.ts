@@ -11,7 +11,7 @@ export async function getTicketMasters() {
   if (!providerId) return { error: "No autorizado" };
 
   try {
-    const [statuses, priorities, categories] = await Promise.all([
+    const [statuses, priorities, categories, supportLevels, attentionTypes] = await Promise.all([
       db.ticketStatus.findMany({
         where: { providerId },
         orderBy: { order: 'asc' }
@@ -23,10 +23,19 @@ export async function getTicketMasters() {
       db.ticketCategory.findMany({
         where: { providerId },
         orderBy: { name: 'asc' }
+      }),
+      // NUEVO: Consultas para los nuevos maestros
+      db.supportLevel.findMany({
+        where: { providerId },
+        orderBy: { name: 'asc' }
+      }),
+      db.attentionType.findMany({
+        where: { providerId },
+        orderBy: { name: 'asc' }
       })
     ]);
 
-    return { statuses, priorities, categories };
+    return { statuses, priorities, categories, supportLevels, attentionTypes };
   } catch (error) {
     return { error: "Error al cargar maestros" };
   }

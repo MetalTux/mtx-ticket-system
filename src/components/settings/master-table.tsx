@@ -32,8 +32,8 @@ export default function MasterTable({ type, data, onEdit }: MasterTableProps) {
         <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
           <tr>
             <th className="p-4">Nombre / Detalle</th>
-            <th className="p-4">Key / Prefijo</th>
-            {type !== 'category' && <th className="p-4">Visual</th>}
+            <th className="p-4">Identificador</th>
+            {['status', 'priority'].includes(type) && <th className="p-4">Visual</th>}
             <th className="p-4">Estado</th>
             <th className="p-4 text-right">Acciones</th>
           </tr>
@@ -41,15 +41,19 @@ export default function MasterTable({ type, data, onEdit }: MasterTableProps) {
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
           {data.map((item) => (
             <tr key={item.id} className={`group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors ${!item.isActive ? 'opacity-60' : ''}`}>
-              <td className="p-4 font-bold text-slate-900 dark:text-slate-100">{item.name}</td>
+              <td className="p-4 font-bold text-slate-900 dark:text-slate-100">
+                {item.name}
+                {'description' in item && item.description && (
+                  <p className="text-xs text-slate-500 font-normal mt-1">{item.description}</p>
+                )}
+              </td>
               <td className="p-4">
                 <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded font-bold text-slate-600 dark:text-slate-400">
-                  {/* Type guard manual para propiedades específicas */}
-                  {'prefix' in item ? item.prefix : item.systemKey}
+                  {'prefix' in item ? item.prefix : ('systemKey' in item ? item.systemKey : 'N/A')}
                 </code>
               </td>
               
-              {type !== 'category' && 'color' in item && (
+              {type !== 'category' && type !== 'supportLevel' && type !== 'attentionType' && 'color' in item && (
                 <td className="p-4">
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded-full border border-white dark:border-slate-700" style={{ backgroundColor: item.color }} />
@@ -60,9 +64,7 @@ export default function MasterTable({ type, data, onEdit }: MasterTableProps) {
 
               <td className="p-4">
                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase border ${
-                  item.isActive 
-                    ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
-                    : 'bg-slate-100 text-slate-500 border-slate-200'
+                  item.isActive ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'
                 }`}>
                   {item.isActive ? 'Activo' : 'Inactivo'}
                 </span>
@@ -70,10 +72,7 @@ export default function MasterTable({ type, data, onEdit }: MasterTableProps) {
 
               <td className="p-4 text-right">
                 <div className="flex justify-end gap-2">
-                  <button 
-                    onClick={() => handleToggle(item)}
-                    className={`p-2 rounded-lg transition-colors ${item.isActive ? 'text-emerald-500 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'}`}
-                  >
+                  <button onClick={() => handleToggle(item)} className={`p-2 rounded-lg transition-colors ${item.isActive ? 'text-emerald-500 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'}`}>
                     {item.isActive ? <Power size={16} /> : <PowerOff size={16} />}
                   </button>
                   <button onClick={() => onEdit(item)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors">

@@ -35,6 +35,9 @@ model ProviderCompany {
   statuses   TicketStatus[]
   priorities TicketPriority[]
   categories TicketCategory[]
+  // NUEVO:
+  supportLevels  SupportLevel[]
+  attentionTypes AttentionType[]
 }
 
 model ClientCompany {
@@ -42,6 +45,10 @@ model ClientCompany {
   name       String
   createdAt  DateTime @default(now())
   isActive   Boolean  @default(true)
+  // NUEVO: Nivel de soporte y bolsa de minutos (0 = Sin límite)
+  monthlyMinutes Int      @default(0) 
+  supportLevelId String?
+  supportLevel   SupportLevel? @relation(fields: [supportLevelId], references: [id])
   
   providerId String
   provider   ProviderCompany @relation(fields: [providerId], references: [id])
@@ -70,6 +77,9 @@ model User {
   createdTickets         Ticket[]        @relation("CreatorUser")
   registeredTickets      Ticket[]        @relation("TicketRegistrar")
   historyEntries         TicketHistory[]
+
+  // NUEVO: Relación muchos a muchos para permisos de vista por Categoría
+  allowedCategories TicketCategory[] @relation("UserAllowedCategories")
 }
 
 // --- Modelos Maestros (Ex-Enums) ---
@@ -118,6 +128,44 @@ model TicketCategory {
   tickets    Ticket[]
   history    TicketHistory[]
   sequences  TicketSequence[]
+
+  // NUEVO: Relación inversa de permisos
+  allowedUsers User[] @relation("UserAllowedCategories")
+}
+
+// NUEVO: Modelo para Nivel de Soporte
+model SupportLevel {
+  id               String   @id @default(cuid())
+  name             String   // Ej: "Premium", "Básico"
+  description      String?
+  isActive         Boolean  @default(true)
+  
+  // Reglas de visualización de tiempos
+  showTimeAnalysis Boolean  @default(false)
+  showTimeDev      Boolean  @default(false)
+  showTimeSupport  Boolean  @default(false)
+  showTimeUpdate   Boolean  @default(false)
+
+  providerId       String
+  provider         ProviderCompany @relation(fields: [providerId], references: [id])
+  
+  clients          ClientCompany[]
+}
+
+// NUEVO: Modelo para Tipo de Atención
+model AttentionType {
+  id          String   @id @default(cuid())
+  name        String   // Ej: "Soporte", "Garantía", "Error"
+  systemKey   String   // Ej: "SUPPORT", "WARRANTY", "BUG"
+  isActive    Boolean  @default(true)
+  
+  providerId  String
+  provider    ProviderCompany @relation(fields: [providerId], references: [id])
+  
+  tickets     Ticket[]
+  history     TicketHistory[]
+
+  @@unique([providerId, systemKey])
 }
 
 // --- Negocio (Tickets) ---
@@ -157,6 +205,11 @@ model Ticket {
   assignedTo   User?          @relation("AssignedUser", fields: [assignedToId], references: [id])
 
   attachments Json?
+
+  // NUEVO: Tipo de Atención
+  attentionTypeId String?
+  attentionType   AttentionType? @relation(fields: [attentionTypeId], references: [id])
+
   history     TicketHistory[]
 }
 
@@ -192,4 +245,14 @@ model TicketHistory {
   
   categoryId   String?
   category     TicketCategory? @relation(fields: [categoryId], references: [id])
+
+  // NUEVO: Relación a Tipo de Atención (para saber si cambió en la historia)
+  attentionTypeId String?
+  attentionType   AttentionType? @relation(fields: [attentionTypeId], references: [id])
+
+  // NUEVO: Registro de tiempos en minutos
+  timeAnalysis    Int @default(0)
+  timeDev         Int @default(0)
+  timeSupport     Int @default(0)
+  timeUpdate      Int @default(0)
 }

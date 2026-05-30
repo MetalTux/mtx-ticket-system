@@ -8,13 +8,14 @@ export const ticketSchema = z.object({
   priorityId: z.string().min(1, "La prioridad es obligatoria"),
   categoryId: z.string().min(1, "La categoría es obligatoria"),
   clientId: z.string().min(1, "La empresa cliente es obligatoria"),
+  attentionTypeId: z.string().optional(), // NUEVO: Evita el error de TS
   attachments: z.array(z.object({
     name: z.string(),
     url: z.string().url()
   })).optional(),
 });
 
-// Esquema para actualizaciones
+// Esquema para actualizaciones y respuestas
 export const updateTicketSchema = z.object({
   ticketId: z.string(),
   comment: z.string().min(1, "El comentario no puede estar vacío"),
@@ -23,4 +24,10 @@ export const updateTicketSchema = z.object({
   categoryId: z.string().optional(),
   assignedToId: z.string().nullable().optional(),
   isInternal: z.boolean().default(false),
+  
+  // NUEVO: Coerción automática a números para los tiempos
+  timeAnalysis: z.coerce.number().min(0, "No puede ser negativo").optional().default(0),
+  timeDev: z.coerce.number().min(0, "No puede ser negativo").optional().default(0),
+  timeSupport: z.coerce.number().min(0, "No puede ser negativo").optional().default(0),
+  timeUpdate: z.coerce.number().min(0, "No puede ser negativo").optional().default(0),
 });

@@ -2,8 +2,18 @@
 import Link from "next/link";
 import ClientForm from "@/components/clients/client-form";
 import { ArrowLeft } from "lucide-react";
+import db from "@/lib/db";
+import { auth } from "@/auth";
 
-export default function NewClientPage() {
+export default async function NewClientPage() {
+  const session = await auth();
+  
+  const supportLevels = await db.supportLevel.findMany({
+    where: { providerId: session?.user?.providerId, isActive: true },
+    select: { id: true, name: true, description: true },
+    orderBy: { name: 'asc' }
+  });
+
   return (
     <div className="max-w-2xl mx-auto space-y-8 py-10 transition-colors duration-300">
       <div>
@@ -14,7 +24,7 @@ export default function NewClientPage() {
           Registrar Nueva Empresa Cliente
         </h1>
       </div>
-      <ClientForm />
+      <ClientForm supportLevels={supportLevels} />
     </div>
   );
 }

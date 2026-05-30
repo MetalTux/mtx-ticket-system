@@ -8,7 +8,6 @@ import { getTicketMasters } from "@/lib/actions/masters";
 export default async function NewTicketPage() {
   const session = await auth();
   
-  // 1. Seguridad y Contexto
   if (!session?.user?.id || !session.user.providerId) {
     redirect("/auth/login");
   }
@@ -16,14 +15,11 @@ export default async function NewTicketPage() {
   const { providerId, role, clientId: userClientId } = session.user;
   const isAdmin = role ? ["ADMIN", "SOPORTE", "DESARROLLO"].includes(role) : false;
 
-  // 2. Carga de Datos en Paralelo
-  // Traemos los maestros (Prioridades/Categorías) y las Empresas Clientes con sus contactos
   const [masters, companies] = await Promise.all([
     getTicketMasters(),
     db.clientCompany.findMany({
       where: {
         providerId: providerId,
-        // Si no es admin, solo ve su propia empresa
         ...(isAdmin ? {} : { id: userClientId || "" }),
         isActive: true,
       },
@@ -37,7 +33,6 @@ export default async function NewTicketPage() {
     })
   ]);
 
-  // Manejo de error si los maestros fallan
   if ("error" in masters) {
     return (
       <div className="p-6 bg-red-50 text-red-600 rounded-xl border border-red-200 m-4">
@@ -61,6 +56,7 @@ export default async function NewTicketPage() {
         companies={companies} 
         priorities={masters.priorities}
         categories={masters.categories}
+        attentionTypes={masters.attentionTypes} // NUEVA PROP
         isAdmin={isAdmin} 
         defaultClientId={userClientId ?? undefined} 
         sessionUser={{

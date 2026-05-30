@@ -4,6 +4,7 @@ import { getTicketMasters } from "@/lib/actions/masters";
 import { redirect } from "next/navigation";
 import TicketMastersTabs from "@/components/settings/ticket-masters-tabs";
 import { Settings2 } from "lucide-react";
+import { TicketMastersResponse } from "@/types/masters";
 
 export default async function TicketSettingsPage() {
   const session = await auth();
@@ -23,12 +24,12 @@ export default async function TicketSettingsPage() {
           Configuración Global de Tickets
         </h1>
         <p className="text-slate-500 dark:text-slate-400 font-medium">
-          Personaliza los estados, prioridades y categorías para {session.user.providerId}.
+          Personaliza los estados, prioridades, niveles de soporte y más para {session.user.providerId}.
         </p>
       </header>
 
-      {/* Este componente manejará las pestañas y las tablas */}
-      <TicketMastersTabs masters={masters} />
+      {/* Se pasa estrictamente como TicketMastersResponse */}
+      <TicketMastersTabs masters={masters as TicketMastersResponse} />
     </div>
   );
 }

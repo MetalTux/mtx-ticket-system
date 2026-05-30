@@ -3,9 +3,9 @@
 
 import { useState } from "react";
 import MasterTable from "./master-table";
-import { ListChecks, ShieldAlert, Tags, Plus } from "lucide-react";
+import { ListChecks, ShieldAlert, Tags, Plus, Headset, BookOpenCheck } from "lucide-react";
 import MasterFormModal from "./master-form-modal";
-import { TicketMastersResponse, MasterType, AnyMaster } from "@/types/masters"; // Asumiendo que los mueves a un archivo de tipos
+import { TicketMastersResponse, MasterType, AnyMaster } from "@/types/masters";
 
 export default function TicketMastersTabs({ masters }: { masters: TicketMastersResponse }) {
   const [activeTab, setActiveTab] = useState<MasterType>('status');
@@ -22,34 +22,23 @@ export default function TicketMastersTabs({ masters }: { masters: TicketMastersR
     setIsModalOpen(true);
   };
 
-  // Mapeo dinámico para evitar 'any' en el renderizado
-  const activeData = 
+  // Mapeo dinámico y estrictamente tipado
+  const activeData: AnyMaster[] = 
     activeTab === 'status' ? masters.statuses :
     activeTab === 'priority' ? masters.priorities :
+    activeTab === 'supportLevel' ? masters.supportLevels :
+    activeTab === 'attentionType' ? masters.attentionTypes :
     masters.categories;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-          <TabButton 
-            active={activeTab === 'status'} 
-            onClick={() => setActiveTab('status')} 
-            icon={<ListChecks size={16}/>} 
-            label="Estados" 
-          />
-          <TabButton 
-            active={activeTab === 'priority'} 
-            onClick={() => setActiveTab('priority')} 
-            icon={<ShieldAlert size={16}/>} 
-            label="Prioridades" 
-          />
-          <TabButton 
-            active={activeTab === 'category'} 
-            onClick={() => setActiveTab('category')} 
-            icon={<Tags size={16}/>} 
-            label="Categorías" 
-          />
+        <div className="flex flex-wrap bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+          <TabButton active={activeTab === 'status'} onClick={() => setActiveTab('status')} icon={<ListChecks size={16}/>} label="Estados" />
+          <TabButton active={activeTab === 'priority'} onClick={() => setActiveTab('priority')} icon={<ShieldAlert size={16}/>} label="Prioridades" />
+          <TabButton active={activeTab === 'category'} onClick={() => setActiveTab('category')} icon={<Tags size={16}/>} label="Categorías" />
+          <TabButton active={activeTab === 'supportLevel'} onClick={() => setActiveTab('supportLevel')} icon={<Headset size={16}/>} label="Niveles Soporte" />
+          <TabButton active={activeTab === 'attentionType'} onClick={() => setActiveTab('attentionType')} icon={<BookOpenCheck size={16}/>} label="Tipos Atención" />
         </div>
 
         <button onClick={handleAdd} className="btn-primary flex items-center gap-2 py-2 px-4 text-xs shadow-md">

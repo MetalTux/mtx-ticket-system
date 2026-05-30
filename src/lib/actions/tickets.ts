@@ -12,17 +12,6 @@ import { TicketReplyEmail } from "@/emails/TicketReplyEmail";
 import { TicketResolvedEmail } from "@/emails/TicketResolvedEmail";
 import { ticketSchema, updateTicketSchema } from "@/lib/validations/tickets";
 
-/**
- * Helper para buscar Master Data por System Key.
- * Protege la lógica de negocio contra cambios en los nombres visuales.
- */
-async function getStatusBySystemKey(key: string, providerId: string) {
-  return await db.ticketStatus.findUnique({
-    where: { providerId_systemKey: { providerId, systemKey: key } }
-  });
-}
-
-// Definimos el tipo del estado para que el Escudo sea 100% sólido
 export type CreateTicketState = {
   errors?: {
     title?: string[];
@@ -30,13 +19,13 @@ export type CreateTicketState = {
     priorityId?: string[];
     categoryId?: string[];
     clientId?: string[];
+    attentionTypeId?: string[]; // NUEVO: Soluciona el error del Formulario
     attachments?: string[];
   };
   message?: string | null;
   success?: boolean;
 } | null;
 
-// Definimos el tipo para que coincida con lo que Zod devuelve al aplanar los errores
 export type UpdateTicketState = {
   errors?: {
     ticketId?: string[];
@@ -46,6 +35,10 @@ export type UpdateTicketState = {
     categoryId?: string[];
     assignedToId?: string[];
     isInternal?: string[];
+    timeAnalysis?: string[]; // NUEVO
+    timeDev?: string[];      // NUEVO
+    timeSupport?: string[];  // NUEVO
+    timeUpdate?: string[];   // NUEVO
   };
   message?: string | null;
   success?: boolean;
@@ -59,17 +52,16 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
 
   const providerId = session.user.providerId;
 
-  // 1. Preparación de datos para el Escudo (Zod)
   const rawData = {
     title: formData.get("title") as string,
     description: formData.get("description") as string,
     priorityId: formData.get("priorityId") as string,
     categoryId: formData.get("categoryId") as string,
     clientId: formData.get("clientId") as string,
+    attentionTypeId: (formData.get("attentionTypeId") as string) || undefined, // Extracción
     attachments: JSON.parse((formData.get("attachments") as string) || "[]"),
   };
 
-  // 2. Validación
   const validatedFields = ticketSchema.safeParse(rawData);
 
   if (!validatedFields.success) {
@@ -79,23 +71,17 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
     };
   }
 
-  const { title, description, priorityId, categoryId, clientId, attachments } = validatedFields.data;
+  const { title, description, priorityId, categoryId, clientId, attentionTypeId, attachments } = validatedFields.data;
 
-  // Datos de autoría
   const formCreatorId = formData.get("creatorId") as string;
   const createdById = session.user.id;
   const creatorId = formCreatorId || session.user.id;
 
-  // --- TRANSACCIÓN PARA EL FOLIO Y CREACIÓN ---
   try {
     const result = await db.$transaction(async (tx) => {
-      // 1. Obtener datos de la categoría para el Prefijo
-      const category = await tx.ticketCategory.findUnique({
-        where: { id: categoryId }
-      });
+      const category = await tx.ticketCategory.findUnique({ where: { id: categoryId } });
       if (!category) throw new Error("Categoría no válida");
 
-      // 2. Manejo de Secuencia atómica
       const seq = await tx.ticketSequence.upsert({
         where: { id: categoryId },
         update: { nextVal: { increment: 1 } },
@@ -105,13 +91,11 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
       const currentNum = seq.nextVal === 2 ? 1 : seq.nextVal - 1;
       const folio = `${category.prefix}-${String(currentNum).padStart(6, '0')}`;
 
-      // 3. Obtener el Status inicial (OPEN)
       const initialStatus = await tx.ticketStatus.findUnique({
         where: { providerId_systemKey: { providerId, systemKey: 'OPEN' } }
       });
       if (!initialStatus) throw new Error("Configuración de estados incompleta (OPEN)");
 
-      // 4. Crear el Ticket
       const ticket = await tx.ticket.create({
         data: {
           folio,
@@ -121,20 +105,16 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
           statusId: initialStatus.id,
           priorityId,
           categoryId,
+          attentionTypeId, // GUARDAR EN BD
           creatorId,
           createdById,
           clientId,
           providerId,
           attachments: attachments as Prisma.InputJsonValue,
         },
-        include: { 
-          creator: true,
-          priority: true,
-          category: true
-        },
+        include: { creator: true, priority: true, category: true },
       });
 
-      // 5. Historial inicial
       await tx.ticketHistory.create({
         data: {
           ticketId: ticket.id,
@@ -142,6 +122,7 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
           statusId: initialStatus.id,
           priorityId,
           categoryId,
+          attentionTypeId, // GUARDAR EN HISTORIAL INICIAL
           comment: "Ticket aperturado en el sistema bajo normativa GTSoft.",
         }
       });
@@ -149,7 +130,6 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
       return ticket;
     });
 
-    // 3. NOTIFICACIÓN (Fuera de la transacción)
     if (result?.creator.email) {
       sendNotification({
         to: result.creator.email,
@@ -160,10 +140,10 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
           category: result.category.name,
           priority: result.priority.name,
           userName: result.creator.name || "Usuario",
-          ticketId: result.id, // Añadido para el link
+          ticketId: result.id, 
           attachments: result.attachments as { name: string; url: string }[]
         }),
-      }).catch(err => console.error("Error enviando correo de creación:", err));
+      }).catch(err => console.error("Error enviando correo:", err));
     }
   } catch (error) {
     console.error("CREATE_TICKET_ERROR:", error);
@@ -179,34 +159,59 @@ export async function addTicketUpdate(prevState: UpdateTicketState, formData: Fo
   const session = await auth();
   if (!session?.user?.id) throw new Error("No autorizado");
 
-  const ticketId = formData.get("ticketId") as string;
-  const comment = formData.get("comment") as string;
-  const statusId = formData.get("statusId") as string;
-  const isInternal = formData.get("isInternal") === "true";
-  const attachments = JSON.parse((formData.get("attachments") as string) || "[]") as Prisma.InputJsonValue;
+  // 1. Extraemos y validamos usando el mismo escudo Zod
+  const rawData = {
+    ticketId: formData.get("ticketId") as string,
+    comment: formData.get("comment") as string,
+    statusId: formData.get("statusId") as string,
+    isInternal: formData.get("isInternal") === "true",
+    timeAnalysis: formData.get("timeAnalysis"),
+    timeDev: formData.get("timeDev"),
+    timeSupport: formData.get("timeSupport"),
+    timeUpdate: formData.get("timeUpdate"),
+  };
 
-  if (!comment) return { error: "El comentario es obligatorio" };
+  const validatedFields = updateTicketSchema.safeParse(rawData);
+
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: "Error de validación en la respuesta rápida.",
+    };
+  }
+
+  const data = validatedFields.data;
+  const attachments = JSON.parse((formData.get("attachments") as string) || "[]") as Prisma.InputJsonValue;
 
   try {
     const ticketDetails = await db.$transaction(async (tx) => {
-      // 1. Crear historial
+      // 1. Crear historial CON TIEMPOS
       await tx.ticketHistory.create({
-        data: { ticketId, userId: session.user.id!, statusId, comment, attachments, isInternal }
+        data: { 
+          ticketId: data.ticketId, 
+          userId: session.user.id!, 
+          statusId: data.statusId!, 
+          comment: data.comment, 
+          attachments, 
+          isInternal: data.isInternal,
+          timeAnalysis: data.timeAnalysis,
+          timeDev: data.timeDev,
+          timeSupport: data.timeSupport,
+          timeUpdate: data.timeUpdate
+        }
       });
 
-      // 2. Actualizar ticket (Añadimos include para sacar correos)
+      // 2. Actualizar ticket
       return await tx.ticket.update({
-        where: { id: ticketId },
-        data: { statusId },
+        where: { id: data.ticketId },
+        data: { statusId: data.statusId },
         include: { creator: true, assignedTo: true, status: true }
       });
     });
 
-    // 3. ENVÍO DE CORREO REAL (Reemplazo del console.log)
-    // Solo notificamos si NO es un comentario interno
-    if (!isInternal) {
+    // 3. ENVÍO DE CORREO
+    if (!data.isInternal) {
       const isCreator = session.user.id === ticketDetails.creatorId;
-      // Lógica de cruce: Si responde el cliente, avisa al técnico. Si responde el técnico, avisa al cliente.
       const recipientEmail = isCreator ? ticketDetails.assignedTo?.email : ticketDetails.creator?.email;
       
       if (recipientEmail) {
@@ -217,18 +222,18 @@ export async function addTicketUpdate(prevState: UpdateTicketState, formData: Fo
             folio: ticketDetails.folio,
             ticketTitle: ticketDetails.title,
             authorName: session.user.name || "Equipo GTSoft",
-            message: comment,
+            message: data.comment,
             ticketId: ticketDetails.id
           })
         }).catch(e => console.error("Error correo reply:", e));
       }
     }
 
-    revalidatePath(`/dashboard/tickets/${ticketId}`);
+    revalidatePath(`/dashboard/tickets/${data.ticketId}`);
     return { success: true };
   } catch (error) {
     console.error("ADD_UPDATE_ERROR:", error);
-    return { message: "Error al agregar comentario" };
+    return { message: "Error al agregar comentario rápido" };
   }
 }
 
@@ -236,15 +241,19 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
   const session = await auth();
   if (!session?.user?.id) throw new Error("No autorizado");
 
-  // 1. Validación con Escudo
+  // Extracción de datos crudos
   const rawData = {
-    ticketId: formData.get("ticketId") as string,
-    comment: formData.get("comment") as string,
-    statusId: formData.get("statusId") as string,
-    priorityId: formData.get("priorityId") as string,
-    categoryId: formData.get("categoryId") as string,
-    assignedToId: (formData.get("assignedToId") as string) || null,
+    ticketId: formData.get("ticketId"),
+    comment: formData.get("comment"),
+    statusId: formData.get("statusId"),
+    priorityId: formData.get("priorityId"),
+    categoryId: formData.get("categoryId"),
+    assignedToId: formData.get("assignedToId") || null,
     isInternal: formData.get("isInternal") === "true",
+    timeAnalysis: formData.get("timeAnalysis"), // NUEVOS
+    timeDev: formData.get("timeDev"),
+    timeSupport: formData.get("timeSupport"),
+    timeUpdate: formData.get("timeUpdate"),
   };
 
   const validatedFields = updateTicketSchema.safeParse(rawData);
@@ -262,6 +271,7 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
 
   try {
     const updatedTicket = await db.$transaction(async (tx) => {
+      // Registrar el historial CON LOS TIEMPOS
       await tx.ticketHistory.create({
         data: {
           ticketId: data.ticketId,
@@ -273,6 +283,10 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
           comment: data.comment,
           attachments,
           isInternal: data.isInternal,
+          timeAnalysis: data.timeAnalysis, // GUARDAR TIEMPOS
+          timeDev: data.timeDev,
+          timeSupport: data.timeSupport,
+          timeUpdate: data.timeUpdate,
         }
       });
 
@@ -289,7 +303,6 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
     });
 
     if (sendEmail && !data.isInternal && updatedTicket.creator?.email) {
-      // Verificamos si el ticket se cerró/resolvió o si es una actualización general
       if (updatedTicket.status.systemKey === "RESOLVED" || updatedTicket.status.systemKey === "CLOSED") {
         sendNotification({
           to: updatedTicket.creator.email,
@@ -298,12 +311,11 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
             folio: updatedTicket.folio,
             title: updatedTicket.title,
             userName: updatedTicket.creator.name || "Usuario",
-            solutionSummary: data.comment, // La nota con la que lo cerró
+            solutionSummary: data.comment,
             ticketId: updatedTicket.id
           })
         }).catch(e => console.error("Error correo resolución:", e));
       } else {
-        // Es un cambio normal y el check de email estaba marcado
         sendNotification({
           to: updatedTicket.creator.email,
           subject: `Actualización de estado: ${updatedTicket.folio}`,
@@ -376,7 +388,6 @@ export async function updateTicketStatusQuick(
     revalidatePath(`/dashboard/tickets/${ticketId}`);
     return { success: true, ticket: updatedTicket };
   } catch (error) {
-    console.error("QUICK_UPDATE_ERROR:", error);
     return { error: "Error interno en la actualización rápida." };
   }
 }
