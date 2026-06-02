@@ -20,8 +20,11 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
   }
 
   const { id } = await params;
+  const role = session.user.role;
+  const userId = session.user.id;
 
-  const [masters, ticket] = await Promise.all([
+  // Consultas en paralelo incluyendo los permisos del usuario actual
+  const [masters, ticket, dbUser] = await Promise.all([
     getTicketMasters(),
     db.ticket.findUnique({
       where: { id },
@@ -29,11 +32,11 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
         status: true,
         priority: true,
         category: true,
-        attentionType: true, // NUEVO
+        attentionType: true,
         creator: true,
         createdBy: true,
         client: {
-          include: { supportLevel: true } // Para obtener las reglas de captura de tiempo
+          include: { supportLevel: true } 
         },
         assignedTo: true,
         history: {
@@ -46,11 +49,36 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
           orderBy: { createdAt: "desc" }
         }
       },
-    })
+    }),
+    // Traemos las categorías permitidas si el usuario es del Staff
+    (role !== "ADMIN" && role !== "SUPER_ADMIN" && role !== "CONTACTO_CLIENTE") 
+      ? db.user.findUnique({
+          where: { id: userId },
+          select: { allowedCategories: { select: { id: true } } }
+        })
+      : Promise.resolve(null)
   ]);
 
+  // 1. Candado Base: El ticket debe existir y pertenecer al proveedor actual
   if (!ticket || ticket.providerId !== session.user.providerId) notFound();
 
+  // 2. Candado RBAC: Verificamos si el usuario tiene permiso para ver ESTE ticket
+  if (role === "CONTACTO_CLIENTE") {
+    // Un cliente solo puede ver tickets de su propia empresa
+    if (ticket.clientId !== session.user.clientId) notFound();
+  } else if (role !== "ADMIN" && role !== "SUPER_ADMIN") {
+    // Un técnico solo ve si es el creador, el asignado, o tiene permiso en la categoría
+    const allowedCategoryIds = dbUser?.allowedCategories.map(c => c.id) || [];
+    const hasAccess = 
+      ticket.creatorId === userId ||
+      ticket.createdById === userId ||
+      ticket.assignedToId === userId ||
+      allowedCategoryIds.includes(ticket.categoryId);
+
+    if (!hasAccess) notFound();
+  }
+
+  // Si pasamos los candados, buscamos a los usuarios para el panel de asignación
   const supportUsers = await db.user.findMany({
     where: {
       role: { in: ["ADMIN", "SOPORTE", "DESARROLLO", "VENTAS"] },
@@ -178,7 +206,6 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
                     <span className="text-[9px] font-bold text-slate-400 uppercase">{new Date(entry.createdAt).toLocaleString()}</span>
                   </div>
 
-                  {/* NUEVO: Visualizador de Tiempos Registrados (Solo si no son cero) */}
                   {(entry.timeAnalysis > 0 || entry.timeDev > 0 || entry.timeSupport > 0 || entry.timeUpdate > 0) && (
                     <div className="flex flex-wrap gap-2 mb-4 bg-slate-50 dark:bg-slate-950 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                       <span className="text-[9px] font-black uppercase tracking-widest text-brand-600 flex items-center mr-2">⏱️ Tiempos:</span>
@@ -226,7 +253,6 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
                   <div className="min-w-0">
                     <p className="text-[9px] font-black text-slate-400 uppercase">Empresa</p>
                     <p className="text-xs lg:text-sm font-bold text-slate-800 dark:text-white truncate">{ticket.client.name}</p>
-                    {/* NUEVO: Mostrar el nivel de soporte */}
                     {ticket.client.supportLevel && (
                       <p className="text-[9px] font-bold text-brand-500 mt-1 uppercase tracking-widest">{ticket.client.supportLevel.name}</p>
                     )}

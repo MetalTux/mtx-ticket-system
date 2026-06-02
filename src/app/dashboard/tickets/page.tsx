@@ -21,51 +21,74 @@ export default async function TicketsPage({
 
   const params = await searchParams;
   const providerId = session.user.providerId;
+  const role = session.user.role;
+  const userId = session.user.id;
 
-  // 1. Obtener Maestros (para filtros y estadísticas dinámicas)
-  const masters = await getTicketMasters();
+  // 1. Obtener Maestros y Permisos de Usuario en paralelo
+  const [masters, dbUser] = await Promise.all([
+    getTicketMasters(),
+    // Buscamos las categorías permitidas si el usuario es STAFF (No ADMIN, No CLIENTE)
+    (role !== "ADMIN" && role !== "SUPER_ADMIN" && role !== "CONTACTO_CLIENTE") 
+      ? db.user.findUnique({
+          where: { id: userId },
+          select: { allowedCategories: { select: { id: true } } }
+        })
+      : Promise.resolve(null)
+  ]);
+
   if ("error" in masters) return <div>Error al cargar maestros.</div>;
+
+  // 2. Construir la bóveda de seguridad RBAC
+  let rbacWhere: Prisma.TicketWhereInput = {};
+  
+  if (role === "CONTACTO_CLIENTE") {
+    // El cliente solo ve su empresa
+    rbacWhere = { clientId: session.user.clientId || "" };
+  } else if (role !== "ADMIN" && role !== "SUPER_ADMIN") {
+    // El STAFF ve: Sus propios tickets O los que tiene asignados O los de sus categorías permitidas
+    const allowedCategoryIds = dbUser?.allowedCategories.map(c => c.id) || [];
+    rbacWhere = {
+      OR: [
+        { creatorId: userId },      // Lo pidió él
+        { createdById: userId },    // Lo registró él a nombre de otro
+        { assignedToId: userId },   // Se lo asignaron a él
+        { categoryId: { in: allowedCategoryIds } } // Tiene permiso sobre la categoría
+      ]
+    };
+  }
+  // Si es ADMIN, rbacWhere queda vacío ({}), por lo que verá todo el providerId.
 
   const sortField = params.sort || "createdAt";
   const sortOrder = (params.order as Prisma.SortOrder) || "desc";
   const page = Number(params.page) || 1;
   const pageSize = 10;
 
-  // 2. Construir Cláusula de Filtrado (Usando IDs)
+  // 3. Unir RBAC con los Filtros de URL
   const whereClause: Prisma.TicketWhereInput = {
     providerId,
-    ...(session.user.role === "CONTACTO_CLIENTE" ? { clientId: session.user.clientId } : {}),
+    ...rbacWhere,
     ...(params.status && { statusId: params.status }),
     ...(params.category && { categoryId: params.category }),
     ...(params.title && { title: { contains: params.title, mode: 'insensitive' } }),
     ...(params.clientName && { client: { name: { contains: params.clientName, mode: 'insensitive' } } }),
   };
 
-// 1. Definimos el tipo de ordenamiento de forma estricta
-const getOrderBy = (field: string, order: Prisma.SortOrder): Prisma.TicketOrderByWithRelationInput => {
-  switch (field) {
-    case "client.name":
-      return { client: { name: order } };
-    case "assignedTo.name":
-      return { assignedTo: { name: order } };
-    case "title":
-      return { title: order };
-    case "status":
-      // Ordenar por el nombre del estado (la relación nueva)
-      return { status: { name: order } };
-    case "priority":
-      // Ordenar por el nivel de la prioridad
-      return { priority: { weight: order } }; 
-    case "createdAt":
-    default:
-      return { createdAt: order };
-  }
-};
+  // 4. Lógica de Ordenamiento
+  const getOrderBy = (field: string, order: Prisma.SortOrder): Prisma.TicketOrderByWithRelationInput => {
+    switch (field) {
+      case "client.name": return { client: { name: order } };
+      case "assignedTo.name": return { assignedTo: { name: order } };
+      case "title": return { title: order };
+      case "status": return { status: { name: order } };
+      case "priority": return { priority: { weight: order } }; 
+      case "createdAt":
+      default: return { createdAt: order };
+    }
+  };
 
-// 2. Aplicamos la lógica en tu componente
-const orderBy = getOrderBy(sortField, sortOrder);
+  const orderBy = getOrderBy(sortField, sortOrder);
 
-  // 3. Consultas en Paralelo
+  // 5. Consultas a Base de Datos
   const [tickets, totalTickets, stats] = await Promise.all([
     db.ticket.findMany({
       where: whereClause,
@@ -73,8 +96,8 @@ const orderBy = getOrderBy(sortField, sortOrder);
         client: true, 
         creator: true, 
         assignedTo: true,
-        status: true,   // Requerido para etiquetas y colores
-        priority: true  // Requerido para etiquetas
+        status: true,
+        priority: true
       },
       orderBy: orderBy,
       skip: (page - 1) * pageSize,
@@ -83,14 +106,14 @@ const orderBy = getOrderBy(sortField, sortOrder);
     db.ticket.count({ where: whereClause }),
     db.ticket.groupBy({
       by: ['statusId'],
-      where: { providerId },
+      where: whereClause, // IMPORTANTE: Agrupar usando la misma regla de seguridad
       _count: { statusId: true }
     }),
   ]);
 
   const totalPages = Math.ceil(totalTickets / pageSize);
 
-  // 4. Mapeo de Estadísticas por SystemKey
+  // 6. Mapeo de Estadísticas
   const getStatCount = (key: string) => {
     const statusObj = masters.statuses.find(s => s.systemKey === key);
     if (!statusObj) return 0;
@@ -112,7 +135,6 @@ const orderBy = getOrderBy(sortField, sortOrder);
         </Link>
       </div>
 
-      {/* BARRA DE ESTADÍSTICAS DINÁMICAS */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:!gap-4">
         <StatCard label="Total" value={totalTickets} color="bg-slate-500" />
         <StatCard label="Abiertos" value={getStatCount('OPEN')} color="bg-orange-500" />
@@ -120,7 +142,6 @@ const orderBy = getOrderBy(sortField, sortOrder);
         <StatCard label="Resueltos" value={getStatCount('RESOLVED')} color="bg-emerald-500" />
       </div>
 
-      {/* FILTROS PASANDO MAESTROS */}
       <TicketFilters statuses={masters.statuses} categories={masters.categories} />
 
       <div className="card-module !p-0 overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">

@@ -32,13 +32,13 @@ export type UpdateTicketState = {
     comment?: string[];
     statusId?: string[];
     priorityId?: string[];
-    categoryId?: string[];
+    // ELIMINADO: categoryId
     assignedToId?: string[];
     isInternal?: string[];
-    timeAnalysis?: string[]; // NUEVO
-    timeDev?: string[];      // NUEVO
-    timeSupport?: string[];  // NUEVO
-    timeUpdate?: string[];   // NUEVO
+    timeAnalysis?: string[]; 
+    timeDev?: string[];      
+    timeSupport?: string[];  
+    timeUpdate?: string[];   
   };
   message?: string | null;
   success?: boolean;
@@ -247,10 +247,10 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
     comment: formData.get("comment"),
     statusId: formData.get("statusId"),
     priorityId: formData.get("priorityId"),
-    categoryId: formData.get("categoryId"),
+    // ELIMINADO: categoryId
     assignedToId: formData.get("assignedToId") || null,
     isInternal: formData.get("isInternal") === "true",
-    timeAnalysis: formData.get("timeAnalysis"), // NUEVOS
+    timeAnalysis: formData.get("timeAnalysis"),
     timeDev: formData.get("timeDev"),
     timeSupport: formData.get("timeSupport"),
     timeUpdate: formData.get("timeUpdate"),
@@ -271,19 +271,18 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
 
   try {
     const updatedTicket = await db.$transaction(async (tx) => {
-      // Registrar el historial CON LOS TIEMPOS
       await tx.ticketHistory.create({
         data: {
           ticketId: data.ticketId,
           userId: session.user.id!,
           statusId: data.statusId!,
           priorityId: data.priorityId,
-          categoryId: data.categoryId,
+          // ELIMINADO: categoryId
           assignedToId: data.assignedToId,
           comment: data.comment,
           attachments,
           isInternal: data.isInternal,
-          timeAnalysis: data.timeAnalysis, // GUARDAR TIEMPOS
+          timeAnalysis: data.timeAnalysis, 
           timeDev: data.timeDev,
           timeSupport: data.timeSupport,
           timeUpdate: data.timeUpdate,
@@ -295,7 +294,7 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
         data: {
           statusId: data.statusId,
           priorityId: data.priorityId,
-          categoryId: data.categoryId,
+          // ELIMINADO: categoryId (Prisma ya no tocará este campo)
           assignedToId: data.assignedToId,
         },
         include: { creator: true, status: true }

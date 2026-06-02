@@ -22,7 +22,6 @@ const RichEditor = dynamic(() => import('@/components/ui/rich-editor'), {
   loading: () => <div className="h-[200px] w-full bg-slate-100 dark:bg-slate-800 animate-pulse rounded-lg border border-slate-200 dark:border-slate-700" />
 });
 
-// Tipo extendido incluyendo el Client y el SupportLevel
 type TicketWithMasters = Ticket & {
   status: TicketStatus;
   priority: TicketPriority;
@@ -54,7 +53,6 @@ export default function TicketManagementPanel({
   const [, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
   
-  // CORRECCIÓN: Uso de useActionState (React 19)
   const [state, formAction, isPending] = useActionState<UpdateTicketState, FormData>(
     updateTicketFull, 
     null
@@ -63,7 +61,6 @@ export default function TicketManagementPanel({
   const isSupport = ["ADMIN", "SOPORTE", "DESARROLLO"].includes(userRole);
   const supportLevel = ticket.client.supportLevel;
 
-  // Limpiar RichEditor tras éxito sin causar "Cascading Renders"
   useEffect(() => {
     if (state?.success) {
       startTransition(() => {
@@ -104,7 +101,6 @@ export default function TicketManagementPanel({
             <>
               <input type="hidden" name="assignedToId" value={ticket.assignedToId || ""} />
               <input type="hidden" name="priorityId" value={ticket.priorityId} />
-              <input type="hidden" name="categoryId" value={ticket.categoryId} />
               <input type="hidden" name="statusId" value={ticket.statusId} />
             </>
           )}
@@ -126,11 +122,12 @@ export default function TicketManagementPanel({
                 </select>
               </div>
 
+              {/* BLOQUEO DE CATEGORÍA: Solo mostramos la información sin permitir editarla */}
               <div className="space-y-1 lg:space-y-2">
-                <label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest">Categoría</label>
-                <select name="categoryId" defaultValue={ticket.categoryId} className="form-input text-[11px] lg:text-xs py-2 dark:bg-slate-800 dark:border-slate-700 w-full">
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest" title="La categoría no puede ser modificada tras generar el folio">Categoría (Fija)</label>
+                <div className="form-input text-[11px] lg:text-xs py-2 bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 w-full text-slate-500 dark:text-slate-400 cursor-not-allowed select-none">
+                  {ticket.category.name}
+                </div>
               </div>
 
               <div className="space-y-1 lg:space-y-2">

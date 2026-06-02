@@ -4,21 +4,31 @@ import db from "@/lib/db";
 import { auth } from "@/auth";
 import { redirect, notFound } from "next/navigation";
 
-// Definimos el tipo de la prop params como una Promesa
 interface Props {
   params: Promise<{ id: string }>;
 }
 
 export default async function EditUserPage({ params }: Props) {
   const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") redirect("/dashboard");
+  if (!session?.user?.providerId || session.user.role !== "ADMIN") redirect("/dashboard");
 
-  // DESENVOLVEMOS los params antes de usarlos
   const { id } = await params;
 
-  const user = await db.user.findUnique({
-    where: { id: id } // Ahora id ya no es undefined
-  });
+  // Consultas en paralelo para mayor velocidad
+  const [user, categories] = await Promise.all([
+    // 1. Buscamos al usuario incluyendo sus categorías actuales
+    db.user.findUnique({
+      where: { id: id },
+      include: {
+        allowedCategories: { select: { id: true } }
+      }
+    }),
+    // 2. Buscamos la lista maestra de categorías
+    db.ticketCategory.findMany({
+      where: { providerId: session.user.providerId, isActive: true },
+      orderBy: { name: 'asc' }
+    })
+  ]);
 
   if (!user) notFound();
 
@@ -27,7 +37,7 @@ export default async function EditUserPage({ params }: Props) {
       <h1 className="text-2xl font-black text-slate-900 dark:text-white mb-6 tracking-tight">
         Modificar Usuario
       </h1>
-      <UserStaffForm initialData={user} />
+      <UserStaffForm initialData={user} categories={categories} />
     </div>
   );
 }

@@ -5,75 +5,107 @@ import db from "@/lib/db";
 import { auth } from "@/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { hash } from "bcrypt-ts"; // Usando la librería que ya tenemos
-import { Role, Prisma } from "@prisma/client";
+import { hash } from "bcrypt-ts"; 
+import { Prisma } from "@prisma/client";
+import { createUserSchema, updateUserSchema } from "@/lib/validations/users";
 
-export async function createStaffUser(formData: FormData) {
+export type UserActionState = {
+  errors?: Record<string, string[]>;
+  message?: string | null;
+  success?: boolean;
+} | null;
+
+export async function createStaffUser(prevState: UserActionState, formData: FormData): Promise<UserActionState> {
   const session = await auth();
-  
-  // Seguridad: Solo los ADMIN de la proveedora pueden crear staff
-  if (!session?.user || session.user.role !== "ADMIN") {
-    throw new Error("No autorizado");
+  if (!session?.user || session.user.role !== "ADMIN") return { message: "No autorizado" };
+
+  // 1. Extraer y mapear datos
+  const rawData = {
+    name: formData.get("name"),
+    email: formData.get("email"),
+    password: formData.get("password"),
+    role: formData.get("role"),
+    // Extraemos todos los checkboxes marcados que se llamen "allowedCategories"
+    allowedCategories: formData.getAll("allowedCategories"),
+  };
+
+  // 2. Validar con Zod
+  const validatedFields = createUserSchema.safeParse(rawData);
+  if (!validatedFields.success) {
+    return { errors: validatedFields.error.flatten().fieldErrors, message: "Revisa los campos del formulario" };
   }
 
-  const name = formData.get("name") as string;
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const role = formData.get("role") as Role;
-  const providerId = session.user.providerId;
+  const { name, email, password, role, allowedCategories } = validatedFields.data;
 
-  if (!name || !email || !password || !role) {
-    throw new Error("Todos los campos son obligatorios");
-  }
-
-  // 1. Validar si el email ya existe
+  // 3. Validar email único
   const existingUser = await db.user.findUnique({ where: { email } });
-  if (existingUser) {
-    throw new Error("El correo electrónico ya está registrado");
-  }
+  if (existingUser) return { message: "El correo electrónico ya está registrado" };
 
-  // 2. Encriptar la contraseña usando bcrypt-ts (coherente con contact.ts)
   const hashedPassword = await hash(password, 10);
 
-  // 3. Crear el usuario vinculado a la Proveedora
-  await db.user.create({
-    data: {
-      name,
-      email,
-      password: hashedPassword,
-      role,
-      providerId,
-      isActive: true,
-    },
-  });
+  // 4. Guardar en BD con relación Muchos a Muchos
+  try {
+    await db.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        role,
+        providerId: session.user.providerId,
+        isActive: true,
+        // Conectar las categorías seleccionadas
+        allowedCategories: {
+          connect: allowedCategories.map(id => ({ id }))
+        }
+      },
+    });
+  } catch (error) {
+    console.error("Error al crear usuario:", error);
+    return { message: "Error interno al crear el usuario" };
+  }
 
   revalidatePath("/dashboard/users");
   redirect("/dashboard/users");
 }
 
-export async function updateStaffUser(userId: string, formData: FormData) {
+export async function updateStaffUser(userId: string, prevState: UserActionState, formData: FormData): Promise<UserActionState> {
   const session = await auth();
-  
-  if (!session?.user || session.user.role !== "ADMIN") {
-    throw new Error("No autorizado");
+  if (!session?.user || session.user.role !== "ADMIN") return { message: "No autorizado" };
+
+  const rawData = {
+    name: formData.get("name"),
+    email: formData.get("email"),
+    password: formData.get("password") || undefined, // Si viene vacío, lo pasamos como undefined
+    role: formData.get("role"),
+    isActive: formData.get("isActive") === "on",
+    allowedCategories: formData.getAll("allowedCategories"),
+  };
+
+  const validatedFields = updateUserSchema.safeParse(rawData);
+  if (!validatedFields.success) {
+    return { errors: validatedFields.error.flatten().fieldErrors, message: "Revisa los campos del formulario" };
   }
 
-  const name = formData.get("name") as string;
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const role = formData.get("role") as Role;
-  const isActive = formData.get("isActive") === "on";
+  const { name, email, password, role, isActive, allowedCategories } = validatedFields.data;
 
-  // Usamos el tipo específico que Prisma espera para una actualización de usuario
+  // Validar si cambió el email que no choque con otro
+  const existingUser = await db.user.findUnique({ where: { email } });
+  if (existingUser && existingUser.id !== userId) {
+    return { message: "El correo electrónico ya está siendo usado por otro usuario" };
+  }
+
   const updateData: Prisma.UserUpdateInput = {
     name,
     email,
     role,
     isActive,
+    // La magia de 'set': Borra las relaciones anteriores y pone las nuevas (reemplazo total)
+    allowedCategories: {
+      set: allowedCategories.map(id => ({ id }))
+    }
   };
 
-  // Solo encriptamos y añadimos la password al objeto si se proporcionó una nueva
-  if (password && password.length > 0) {
+  if (password) {
     updateData.password = await hash(password, 10);
   }
 
@@ -84,7 +116,7 @@ export async function updateStaffUser(userId: string, formData: FormData) {
     });
   } catch (error) {
     console.error("Error al actualizar usuario:", error);
-    throw new Error("No se pudo actualizar el usuario");
+    return { message: "No se pudo actualizar el usuario" };
   }
 
   revalidatePath("/dashboard/users");
@@ -93,22 +125,13 @@ export async function updateStaffUser(userId: string, formData: FormData) {
 
 export async function deleteOrDeactivateUser(userId: string) {
   const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return { error: "No autorizado" };
-  }
+  if (!session?.user || session.user.role !== "ADMIN") return { error: "No autorizado" };
 
   try {
-    // VERIFICACIÓN MANUAL: ¿Tiene tickets asignados o creados?
     const userWithTickets = await db.user.findUnique({
       where: { id: userId },
       include: {
-        _count: {
-          select: {
-            assignedTickets: true,
-            createdTickets: true,
-            historyEntries: true,
-          }
-        }
+        _count: { select: { assignedTickets: true, createdTickets: true, historyEntries: true } }
       }
     });
 
@@ -118,25 +141,16 @@ export async function deleteOrDeactivateUser(userId: string) {
       (userWithTickets?._count.historyEntries || 0) > 0;
 
     if (hasHistory) {
-      // Si tiene historial, DESACTIVAMOS
-      await db.user.update({
-        where: { id: userId },
-        data: { isActive: false },
-      });
+      await db.user.update({ where: { id: userId }, data: { isActive: false } });
       revalidatePath("/dashboard/users");
       return { success: "Usuario con historial: Se ha desactivado el acceso." };
     }
 
-    // Si NO tiene historial, ELIMINAMOS
-    await db.user.delete({
-      where: { id: userId },
-    });
-    
+    await db.user.delete({ where: { id: userId } });
     revalidatePath("/dashboard/users");
     return { success: "Usuario sin historial eliminado permanentemente." };
 
   } catch (error) {
-    console.error("Delete Error:", error);
     return { error: "No se pudo procesar la solicitud de borrado." };
   }
 }

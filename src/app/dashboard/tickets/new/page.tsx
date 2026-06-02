@@ -12,10 +12,12 @@ export default async function NewTicketPage() {
     redirect("/auth/login");
   }
 
-  const { providerId, role, clientId: userClientId } = session.user;
-  const isAdmin = role ? ["ADMIN", "SOPORTE", "DESARROLLO"].includes(role) : false;
+  const { providerId, role, clientId: userClientId, id: userId } = session.user;
+  const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
+  const isClient = role === "CONTACTO_CLIENTE";
 
-  const [masters, companies] = await Promise.all([
+  // 1. Carga de Datos en Paralelo (Añadimos la búsqueda de permisos del usuario)
+  const [masters, companies, dbUser] = await Promise.all([
     getTicketMasters(),
     db.clientCompany.findMany({
       where: {
@@ -30,7 +32,14 @@ export default async function NewTicketPage() {
         }
       },
       orderBy: { name: 'asc' }
-    })
+    }),
+    // Buscamos las categorías permitidas si el usuario es STAFF (Ni ADMIN, Ni CLIENTE)
+    (!isAdmin && !isClient) 
+      ? db.user.findUnique({
+          where: { id: userId },
+          select: { allowedCategories: { select: { id: true } } }
+        })
+      : Promise.resolve(null)
   ]);
 
   if ("error" in masters) {
@@ -39,6 +48,15 @@ export default async function NewTicketPage() {
         Error al cargar la configuración de GTSoft. Reintenta en unos momentos.
       </div>
     );
+  }
+
+  // 2. Filtro RBAC para el Desplegable de Categorías
+  let availableCategories = masters.categories;
+  
+  if (!isAdmin && !isClient && dbUser) {
+    const allowedIds = dbUser.allowedCategories.map(c => c.id);
+    // Filtramos la lista maestra para que solo queden las categorías permitidas
+    availableCategories = availableCategories.filter(c => allowedIds.includes(c.id));
   }
 
   return (
@@ -55,8 +73,8 @@ export default async function NewTicketPage() {
       <TicketForm 
         companies={companies} 
         priorities={masters.priorities}
-        categories={masters.categories}
-        attentionTypes={masters.attentionTypes} // NUEVA PROP
+        categories={availableCategories} /* PASAMOS LAS CATEGORÍAS FILTRADAS */
+        attentionTypes={masters.attentionTypes}
         isAdmin={isAdmin} 
         defaultClientId={userClientId ?? undefined} 
         sessionUser={{
