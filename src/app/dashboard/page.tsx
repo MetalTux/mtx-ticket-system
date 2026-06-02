@@ -2,7 +2,7 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import db from "@/lib/db";
-import KanbanBoard from "@/components/dashboard/kanban-board";
+import TicketStatusBoard from "@/components/dashboard/ticket-status-board"; // NUEVO IMPORT
 import StatsCards from "@/components/dashboard/stats-cards";
 import TicketsTrendChart from "@/components/dashboard/tickets-trend-chart";
 import CategoryDistributionChart from "@/components/dashboard/category-distribution-chart";
@@ -25,7 +25,6 @@ export default async function DashboardPage() {
 
   if (!providerId || !userId) return <div>Error: No se encontró identificador de proveedor.</div>;
 
-  // 1. Obtener Maestros y Permisos
   const [masters, dbUser] = await Promise.all([
     getTicketMasters(),
     (role !== "ADMIN" && !isClient) 
@@ -38,7 +37,6 @@ export default async function DashboardPage() {
 
   if ("error" in masters) return <div>Error cargando configuración.</div>;
 
-  // 2. Filtro RBAC Estricto (Idéntico a tickets/page.tsx)
   let rbacWhere: Prisma.TicketWhereInput = {};
   
   if (isClient) {
@@ -60,7 +58,6 @@ export default async function DashboardPage() {
     ...rbacWhere
   };
 
-  // 3. Consultas en paralelo protegidas por RBAC
   const [ticketsRaw, categoriesCount, recentActivity, statsDataRaw] = await Promise.all([
     db.ticket.findMany({
       where: ticketsWhereClause,
@@ -94,7 +91,6 @@ export default async function DashboardPage() {
     })
   ]);
 
-  // --- LÓGICA DE ESTADÍSTICAS POR SYSTEM KEY ---
   const getCountBySystemKey = (key: string) => {
     const status = masters.statuses.find(s => s.systemKey === key);
     if (!status) return 0;
@@ -111,7 +107,6 @@ export default async function DashboardPage() {
     ).length
   };
 
-  // --- TRANSFORMACIÓN PARA COMPONENTES ---
   const ticketsForKanban = ticketsRaw.map(t => ({
     id: t.id,
     folio: t.folio || "",
@@ -120,6 +115,9 @@ export default async function DashboardPage() {
     statusName: t.status.name,
     priority: t.priority.name,
     priorityColor: t.priority.color,
+    // Agregamos los dos campos que TypeScript está pidiendo:
+    prioritySystemKey: t.priority.systemKey, 
+    updatedAt: t.updatedAt,
     category: t.category.name,
     client: { name: t.client.name }
   }));
@@ -147,16 +145,6 @@ export default async function DashboardPage() {
       value: stats.total > 0 ? Math.round((c._count._all / stats.total) * 100) : 0,
       color: "#0ea5e9"
     }
-  });
-
-  const supportUsers = await db.user.findMany({
-    where: {
-      role: { in: ["ADMIN", "SOPORTE", "DESARROLLO"] },
-      isActive: true,
-      providerId: providerId
-    },
-    select: { id: true, name: true },
-    orderBy: { name: 'asc' }
   });
 
   return (
@@ -190,12 +178,12 @@ export default async function DashboardPage() {
             <div className="flex items-center gap-3 mb-6">
               <div className="h-6 w-1 bg-brand-600 dark:bg-brand-500 rounded-full" />
               <h2 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest">
-                Flujo de Trabajo (Kanban)
+                Estado Actual de Tickets
               </h2>
             </div>
-            <KanbanBoard 
-              initialTickets={ticketsForKanban} 
-              supportUsers={supportUsers} 
+            {/* NUEVO COMPONENTE: Tablero estático de acceso rápido */}
+            <TicketStatusBoard 
+              tickets={ticketsForKanban} 
               statuses={masters.statuses} 
             />
           </div>
