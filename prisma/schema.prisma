@@ -72,6 +72,9 @@ model User {
   clientId   String?
   client     ClientCompany?   @relation(fields: [clientId], references: [id])
 
+  isTwoFactorEnabled Boolean @default(false)
+  twoFactorSecret    String?
+
   assignedTickets        Ticket[]        @relation("AssignedUser")
   assignedTicketsHistory TicketHistory[] @relation("AssignedUserHistory")
   createdTickets         Ticket[]        @relation("CreatorUser")
