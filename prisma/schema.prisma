@@ -256,3 +256,15 @@ model TicketHistory {
   timeSupport     Int @default(0)
   timeUpdate      Int @default(0)
 }
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expires   DateTime
+  createdAt DateTime @default(now())
+
+  // Esta restricción asegura que si buscamos por email y token, 
+  // la combinación sea absolutamente única en la base de datos.
+  @@unique([email, token])
+}

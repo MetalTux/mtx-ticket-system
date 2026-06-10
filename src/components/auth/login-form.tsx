@@ -1,9 +1,10 @@
 // src/components/auth/login-form.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import LoadingButton from "@/components/ui/loading-button";
 
@@ -13,6 +14,17 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Revisamos si el usuario viene de cambiar su contraseña exitosamente
+  useEffect(() => {
+    if (searchParams.get("reset") === "success") {
+      toast.success("Contraseña actualizada con éxito. Ya puedes iniciar sesión.");
+      
+      // Limpiamos la URL silenciosamente para que no se repita el Toast al recargar o por el Strict Mode
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,9 +56,17 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Banner de error */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 p-3 rounded-xl text-xs font-bold border border-red-100 dark:border-red-900/20 transition-all animate-in fade-in zoom-in-95">
           {error}
+        </div>
+      )}
+      
+      {/* Banner de éxito al resetear contraseña */}
+      {searchParams.get("reset") === "success" && !error && (
+        <div className="bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 p-3 rounded-xl text-xs font-bold border border-emerald-100 dark:border-emerald-900/20 transition-all animate-in fade-in zoom-in-95">
+          Tu contraseña ha sido actualizada. Ingresa tus nuevas credenciales.
         </div>
       )}
       
@@ -66,9 +86,19 @@ export default function LoginForm() {
       </div>
 
       <div className="space-y-1.5">
-        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">
-          Contraseña
-        </label>
+        {/* Aquí hicimos el cambio: un flexbox para poner el label y el link en la misma línea */}
+        <div className="flex items-center justify-between ml-1 pr-1">
+          <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+            Contraseña
+          </label>
+          <Link 
+            href="/auth/forgot-password" 
+            className="text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:text-brand-500 hover:underline transition-all"
+            tabIndex={-1}
+          >
+            ¿Olvidaste tu contraseña?
+          </Link>
+        </div>
         <input
           type="password"
           required
@@ -93,107 +123,3 @@ export default function LoginForm() {
     </form>
   );
 }
-
-// // src/components/auth/login-form.tsx
-// "use client";
-
-// import { useState } from "react";
-// import { signIn } from "next-auth/react";
-// import { useRouter } from "next/navigation";
-// import { toast } from "sonner"; // Opcional, pero consistente con tu App
-// import LoadingButton from "@/components/ui/loading-button";
-
-// export default function LoginForm() {
-//   const [email, setEmail] = useState("");
-//   const [password, setPassword] = useState("");
-//   const [error, setError] = useState<string | null>(null);
-//   const [loading, setLoading] = useState(false);
-//   const router = useRouter();
-
-//   const handleSubmit = async (e: React.FormEvent) => {
-//     e.preventDefault();
-//     setLoading(true);
-//     setError(null);
-
-//     try {
-//       const result = await signIn("credentials", {
-//         email,
-//         password,
-//         redirect: false,
-//       });
-
-//       if (result?.error) {
-//         setError("Credenciales inválidas. Por favor, reintenta.");
-//         toast.error("Error de acceso");
-//         setLoading(false);
-//       } else {
-//         toast.success("¡Bienvenido!");
-//         router.push("/dashboard");
-//         router.refresh();
-//       }
-//     } catch (err) {
-//       toast.error("Ocurrió un error inesperado.");
-//       setError("Ocurrió un error inesperado.");
-//       setLoading(false);
-//     } finally {
-//       //setLoading(false);
-//     }
-//   };
-
-//   return (
-//     <form onSubmit={handleSubmit} className="space-y-4">
-//       {error && (
-//         <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm border border-red-100 dark:border-red-900/30 transition-colors">
-//           {error}
-//         </div>
-//       )}
-      
-//       <div>
-//         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors">
-//           Correo Electrónico
-//         </label>
-//         <input
-//           type="email"
-//           required
-//           className="mt-1 block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md shadow-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent sm:text-sm transition-all"
-//           value={email}
-//           onChange={(e) => setEmail(e.target.value)}
-//           placeholder="admin@serviciosit.com"
-//           disabled={loading}
-//         />
-//       </div>
-
-//       <div>
-//         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors">
-//           Contraseña
-//         </label>
-//         <input
-//           type="password"
-//           required
-//           className="mt-1 block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md shadow-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent sm:text-sm transition-all"
-//           value={password}
-//           onChange={(e) => setPassword(e.target.value)}
-//           placeholder="••••••••"
-//           disabled={loading}
-//         />
-//       </div>
-
-//       <LoadingButton 
-//         type="submit" 
-//         className="w-full py-3" 
-//         loadingText="Validando credenciales..."
-//         isLoading={loading} // Pasamos el estado manual aquí
-//       >
-//         Iniciar Sesión
-//       </LoadingButton>
-
-//       {/* <button
-//         type="submit"
-//         disabled={loading}
-//         className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-bold text-white bg-brand-600 hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-900 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-//       >
-//         {loading ? "Verificando..." : "Iniciar Sesión"}
-//       </button> */}
-//     </form>
-//   );
-// }
