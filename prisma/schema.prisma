@@ -30,6 +30,7 @@ model ProviderCompany {
   users      User[]   
   clients    ClientCompany[] 
   tickets    Ticket[]
+  ticketSequences  TicketSequence[]
   
   // Maestros dinámicos por proveedor
   statuses   TicketStatus[]
@@ -175,7 +176,7 @@ model AttentionType {
 
 model Ticket {
   id          String   @id @default(cuid())
-  folio       String   @unique
+  folio       String   
   sequence    Int
   title       String
   description String
@@ -214,13 +215,19 @@ model Ticket {
   attentionType   AttentionType? @relation(fields: [attentionTypeId], references: [id])
 
   history     TicketHistory[]
+
+  @@unique([providerId, folio])
 }
 
 model TicketSequence {
   id         String   @id @default(cuid())
+  providerId String
+  provider   ProviderCompany @relation(fields: [providerId], references: [id])
   categoryId String
   category   TicketCategory @relation(fields: [categoryId], references: [id])
   nextVal    Int      @default(1)
+
+  @@unique([providerId, categoryId])
 }
 
 model TicketHistory {

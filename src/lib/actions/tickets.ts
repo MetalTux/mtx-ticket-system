@@ -83,9 +83,18 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
       if (!category) throw new Error("Categoría no válida");
 
       const seq = await tx.ticketSequence.upsert({
-        where: { id: categoryId },
+        where: { 
+          providerId_categoryId: {
+            providerId: providerId,
+            categoryId: categoryId
+          }
+        },
         update: { nextVal: { increment: 1 } },
-        create: { categoryId: categoryId, nextVal: 2 },
+        create: { 
+          providerId: providerId,
+          categoryId: categoryId, 
+          nextVal: 2 
+        },
       });
 
       const currentNum = seq.nextVal === 2 ? 1 : seq.nextVal - 1;
