@@ -7,7 +7,7 @@ import { UploadButton } from "@/lib/uploadthing";
 import { createTicket, type CreateTicketState } from "@/lib/actions/tickets";
 import { TicketPriority, TicketCategory, ClientCompany, User, AttentionType } from "@prisma/client";
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Paperclip, X, AlertCircle } from "lucide-react";
+import { ArrowLeft, Paperclip, X, AlertCircle, Clock } from "lucide-react";
 import LoadingButton from "@/components/ui/loading-button";
 
 const RichEditor = dynamic(() => import('@/components/ui/rich-editor'), { 
@@ -15,8 +15,10 @@ const RichEditor = dynamic(() => import('@/components/ui/rich-editor'), {
   loading: () => <div className="h-[120px] w-full bg-slate-100 dark:bg-slate-800 animate-pulse rounded-lg" />
 });
 
+// ACTUALIZAMOS LA INTERFAZ PARA RECIBIR LOS MINUTOS CALCULADOS
 interface CompanyWithContacts extends ClientCompany {
   contacts: User[];
+  consumedMinutes: number;
 }
 
 interface TicketFormProps {
@@ -40,7 +42,6 @@ export default function TicketForm({
 }: TicketFormProps) {
   const router = useRouter();
   
-  // CORRECCIÓN: Uso de useActionState (React 19)
   const [state, formAction, isPending] = useActionState<CreateTicketState, FormData>(
     createTicket, 
     null
@@ -53,6 +54,33 @@ export default function TicketForm({
   const selectedCompany = companies.find(c => c.id === selectedClientId);
   const availableContacts = selectedCompany?.contacts || [];
   const isClient = sessionUser.role === "CONTACTO_CLIENTE";
+
+  // LÓGICA DE ALERTA DE TIEMPO
+  let timeAlert = null;
+  if (selectedCompany && selectedCompany.monthlyMinutes > 0) {
+    const remaining = Math.max(0, selectedCompany.monthlyMinutes - selectedCompany.consumedMinutes);
+    const percentLeft = (remaining / selectedCompany.monthlyMinutes) * 100;
+    
+    if (remaining === 0) {
+      timeAlert = (
+        <div className="mt-2 flex items-center gap-2 p-2.5 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg text-red-600 dark:text-red-400 text-[10px] font-bold animate-in fade-in slide-in-from-top-1">
+          <AlertCircle size={14} /> El cliente ha agotado su tiempo contratado ({selectedCompany.monthlyMinutes} min).
+        </div>
+      );
+    } else if (percentLeft <= 15) {
+      timeAlert = (
+        <div className="mt-2 flex items-center gap-2 p-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg text-amber-700 dark:text-amber-400 text-[10px] font-bold animate-in fade-in slide-in-from-top-1">
+          <Clock size={14} /> Queda poco saldo: {remaining} min disponibles de {selectedCompany.monthlyMinutes}.
+        </div>
+      );
+    } else {
+      timeAlert = (
+        <div className="mt-2 flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-500 dark:text-slate-400 text-[10px] font-bold animate-in fade-in slide-in-from-top-1">
+          <Clock size={14} /> Saldo disponible: {remaining} min de {selectedCompany.monthlyMinutes}.
+        </div>
+      );
+    }
+  }
 
   return (
     <div className="space-y-2 lg:space-y-6">
@@ -93,11 +121,15 @@ export default function TicketForm({
                   ))}
                 </select>
                 {state?.errors?.clientId && <p className="text-[10px] text-red-500 font-bold">{state.errors.clientId[0]}</p>}
+                {timeAlert}
               </>
             ) : (
-              <div className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200">
-                {selectedCompany?.name || "Empresa Asignada"}
-                <input type="hidden" name="clientId" value={defaultClientId || ""} />
+              <div>
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200">
+                  {selectedCompany?.name || "Empresa Asignada"}
+                  <input type="hidden" name="clientId" value={defaultClientId || ""} />
+                </div>
+                {timeAlert}
               </div>
             )}
           </div>

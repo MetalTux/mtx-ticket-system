@@ -64,10 +64,8 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
 
   // 2. Candado RBAC: Verificamos si el usuario tiene permiso para ver ESTE ticket
   if (role === "CONTACTO_CLIENTE") {
-    // Un cliente solo puede ver tickets de su propia empresa
     if (ticket.clientId !== session.user.clientId) notFound();
   } else if (role !== "ADMIN" && role !== "SUPER_ADMIN") {
-    // Un técnico solo ve si es el creador, el asignado, o tiene permiso en la categoría
     const allowedCategoryIds = dbUser?.allowedCategories.map(c => c.id) || [];
     const hasAccess = 
       ticket.creatorId === userId ||
@@ -86,6 +84,33 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
     },
     orderBy: { name: "asc" }
   });
+
+  // ==========================================
+  // CÁLCULO DINÁMICO DE TIEMPOS Y PERMISOS
+  // ==========================================
+  const isSupport = role && ["SUPER_ADMIN", "ADMIN", "SOPORTE", "DESARROLLO", "VENTAS"].includes(role);
+  const sl = ticket.client.supportLevel;
+
+  // Permisos de visibilidad
+  const canViewAnalysis = isSupport || sl?.showTimeAnalysis;
+  const canViewDev = isSupport || sl?.showTimeDev;
+  const canViewSupport = isSupport || sl?.showTimeSupport;
+  const canViewUpdate = isSupport || sl?.showTimeUpdate;
+
+  // Sumas reales obtenidas del historial
+  const rawAnalysis = ticket.history.reduce((acc, h) => acc + h.timeAnalysis, 0);
+  const rawDev = ticket.history.reduce((acc, h) => acc + h.timeDev, 0);
+  const rawSupport = ticket.history.reduce((acc, h) => acc + h.timeSupport, 0);
+  const rawUpdate = ticket.history.reduce((acc, h) => acc + h.timeUpdate, 0);
+
+  // Sumas filtradas (si el cliente no puede ver "Dev", su total no lo incluirá)
+  const visibleAnalysis = canViewAnalysis ? rawAnalysis : 0;
+  const visibleDev = canViewDev ? rawDev : 0;
+  const visibleSupport = canViewSupport ? rawSupport : 0;
+  const visibleUpdate = canViewUpdate ? rawUpdate : 0;
+  
+  const visibleGrandTotal = visibleAnalysis + visibleDev + visibleSupport + visibleUpdate;
+  // ==========================================
 
   return (
     <div className="max-w-7xl mx-auto space-y-2 lg:space-y-6 py-2 lg:py-8 px-3 lg:px-8 transition-colors duration-300">
@@ -209,10 +234,10 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
                   {(entry.timeAnalysis > 0 || entry.timeDev > 0 || entry.timeSupport > 0 || entry.timeUpdate > 0) && (
                     <div className="flex flex-wrap gap-2 mb-4 bg-slate-50 dark:bg-slate-950 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                       <span className="text-[9px] font-black uppercase tracking-widest text-brand-600 flex items-center mr-2">⏱️ Tiempos:</span>
-                      {entry.timeAnalysis > 0 && <span className="text-[9px] font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Análisis: {entry.timeAnalysis}m</span>}
-                      {entry.timeDev > 0 && <span className="text-[9px] font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Desarrollo: {entry.timeDev}m</span>}
-                      {entry.timeSupport > 0 && <span className="text-[9px] font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Soporte: {entry.timeSupport}m</span>}
-                      {entry.timeUpdate > 0 && <span className="text-[9px] font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Actualización: {entry.timeUpdate}m</span>}
+                      {entry.timeAnalysis > 0 && canViewAnalysis && <span className="text-[9px] font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Análisis: {entry.timeAnalysis}m</span>}
+                      {entry.timeDev > 0 && canViewDev && <span className="text-[9px] font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Desarrollo: {entry.timeDev}m</span>}
+                      {entry.timeSupport > 0 && canViewSupport && <span className="text-[9px] font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Soporte: {entry.timeSupport}m</span>}
+                      {entry.timeUpdate > 0 && canViewUpdate && <span className="text-[9px] font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Actualización: {entry.timeUpdate}m</span>}
                     </div>
                   )}
 
@@ -245,6 +270,48 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
 
         <aside className="lg:col-span-4 space-y-2 lg:space-y-6 order-1 lg:order-3">
           <div className="card-module space-y-2 lg:space-y-8 bg-white dark:bg-slate-900 !p-4 lg:!p-6 lg:sticky lg:top-8">
+            
+            {/* NUEVO BLOQUE: Resumen de Tiempos */}
+            {visibleGrandTotal > 0 && (
+              <section className="bg-brand-50/80 dark:bg-slate-800/80 border border-brand-100 dark:border-slate-700 p-4 rounded-xl mb-6 shadow-sm">
+                <h4 className="text-[9px] font-black text-brand-600 dark:text-brand-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                  <Clock size={14} /> Resumen de Tiempos
+                </h4>
+                
+                <div className="space-y-2.5">
+                  {visibleAnalysis > 0 && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-600 dark:text-slate-300">Análisis</span>
+                      <span className="font-black text-slate-800 dark:text-white">{visibleAnalysis} min</span>
+                    </div>
+                  )}
+                  {visibleDev > 0 && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-600 dark:text-slate-300">Desarrollo</span>
+                      <span className="font-black text-slate-800 dark:text-white">{visibleDev} min</span>
+                    </div>
+                  )}
+                  {visibleSupport > 0 && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-600 dark:text-slate-300">Soporte/Gestión</span>
+                      <span className="font-black text-slate-800 dark:text-white">{visibleSupport} min</span>
+                    </div>
+                  )}
+                  {visibleUpdate > 0 && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-600 dark:text-slate-300">Actualización</span>
+                      <span className="font-black text-slate-800 dark:text-white">{visibleUpdate} min</span>
+                    </div>
+                  )}
+                  
+                  <div className="pt-2.5 mt-1 border-t border-brand-200 dark:border-slate-700 flex justify-between items-center text-xs">
+                    <span className="font-black uppercase tracking-widest text-brand-700 dark:text-brand-400">Total Invertido</span>
+                    <span className="font-black text-brand-700 dark:text-brand-400 text-sm">{visibleGrandTotal} min</span>
+                  </div>
+                </div>
+              </section>
+            )}
+
             <section>
               <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Información del Cliente</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">

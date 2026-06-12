@@ -16,8 +16,13 @@ export default async function NewTicketPage() {
   const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
   const isClient = role === "CONTACTO_CLIENTE";
 
-  // 1. Carga de Datos en Paralelo (Añadimos la búsqueda de permisos del usuario)
-  const [masters, companies, dbUser] = await Promise.all([
+  // CÁLCULO DE FECHAS PARA EL MES ACTUAL
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  // 1. Carga de Datos en Paralelo
+  const [masters, rawCompanies, dbUser] = await Promise.all([
     getTicketMasters(),
     db.clientCompany.findMany({
       where: {
@@ -29,11 +34,20 @@ export default async function NewTicketPage() {
         contacts: {
           where: { role: "CONTACTO_CLIENTE", isActive: true },
           orderBy: { name: 'asc' }
+        },
+        // TRAEMOS EL HISTORIAL DEL MES PARA CALCULAR
+        tickets: {
+          select: {
+            history: {
+              where: { createdAt: { gte: startOfMonth, lte: endOfMonth } },
+              select: { timeAnalysis: true, timeDev: true, timeSupport: true, timeUpdate: true }
+            }
+          }
         }
       },
       orderBy: { name: 'asc' }
     }),
-    // Buscamos las categorías permitidas si el usuario es STAFF (Ni ADMIN, Ni CLIENTE)
+    // Buscamos las categorías permitidas si el usuario es STAFF
     (!isAdmin && !isClient) 
       ? db.user.findUnique({
           where: { id: userId },
@@ -50,12 +64,25 @@ export default async function NewTicketPage() {
     );
   }
 
+  // PROCESAMOS LOS MINUTOS CONSUMIDOS DE CADA EMPRESA
+  const enrichedCompanies = rawCompanies.map(company => {
+    let consumedMinutes = 0;
+    company.tickets.forEach(ticket => {
+      ticket.history.forEach(h => {
+        consumedMinutes += h.timeAnalysis + h.timeDev + h.timeSupport + h.timeUpdate;
+      });
+    });
+    
+    // Devolvemos la empresa sin el arreglo de tickets (para no sobrecargar el cliente)
+    const { tickets, ...rest } = company;
+    return { ...rest, consumedMinutes };
+  });
+
   // 2. Filtro RBAC para el Desplegable de Categorías
   let availableCategories = masters.categories;
   
   if (!isAdmin && !isClient && dbUser) {
     const allowedIds = dbUser.allowedCategories.map(c => c.id);
-    // Filtramos la lista maestra para que solo queden las categorías permitidas
     availableCategories = availableCategories.filter(c => allowedIds.includes(c.id));
   }
 
@@ -71,9 +98,9 @@ export default async function NewTicketPage() {
       </div>
 
       <TicketForm 
-        companies={companies} 
+        companies={enrichedCompanies} 
         priorities={masters.priorities}
-        categories={availableCategories} /* PASAMOS LAS CATEGORÍAS FILTRADAS */
+        categories={availableCategories}
         attentionTypes={masters.attentionTypes}
         isAdmin={isAdmin} 
         defaultClientId={userClientId ?? undefined} 
