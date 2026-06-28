@@ -5,8 +5,9 @@ import { useState } from "react";
 import { ProviderCompany } from "@prisma/client";
 import { deleteProvider, toggleProviderStatus } from "@/lib/actions/global-management";
 import { toast } from "sonner";
-import { Edit2, Power, PowerOff, Users, Ticket, Plus } from "lucide-react";
+import { Edit2, Power, PowerOff, Users, Ticket, Plus, ShieldAlert } from "lucide-react";
 import ProviderFormModal from "./provider-form-modal";
+import PurgeProviderModal from "./purge-provider-modal";
 import { Trash2 } from "lucide-react"; // Importar icono
 
 interface ProviderWithStats extends ProviderCompany {
@@ -19,6 +20,7 @@ interface ProviderWithStats extends ProviderCompany {
 export default function ProviderListClient({ initialProviders }: { initialProviders: ProviderWithStats[] }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<ProviderCompany | null>(null);
+  const [purgingProvider, setPurgingProvider] = useState<ProviderCompany | null>(null);
 
   const handleToggle = async (provider: ProviderWithStats) => {
     const res = await toggleProviderStatus(provider.id, provider.isActive);
@@ -88,6 +90,13 @@ export default function ProviderListClient({ initialProviders }: { initialProvid
                 </td>
                 <td className="p-4 text-right">
                   <div className="flex justify-end gap-2">
+                    <button 
+                      onClick={() => setPurgingProvider(p)} 
+                      className="p-2 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-500/10 rounded-lg transition-colors" 
+                      title="Purgar Datos de DEMO"
+                    >
+                      <ShieldAlert size={18} />
+                    </button>
                     <button onClick={() => handleToggle(p)} className={`p-2 rounded-lg transition-colors ${p.isActive ? 'text-red-500 hover:bg-red-50' : 'text-emerald-500 hover:bg-emerald-50'}`}>
                       {p.isActive ? <PowerOff size={18} /> : <Power size={18} />}
                     </button>
@@ -109,6 +118,12 @@ export default function ProviderListClient({ initialProviders }: { initialProvid
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         initialData={editingProvider} 
+      />
+      <PurgeProviderModal
+        isOpen={!!purgingProvider}
+        onClose={() => setPurgingProvider(null)}
+        providerId={purgingProvider?.id || ""}
+        providerName={purgingProvider?.name || ""}
       />
     </div>
   );

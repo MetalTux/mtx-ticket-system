@@ -200,6 +200,12 @@ export default function LoginForm() {
           </div>
         </div>
       )}
+      
+      <div className="mt-4 flex flex-col items-center justify-center gap-0.5 text-center">
+        <p className="text-[9px] text-slate-400/80 dark:text-slate-600 font-mono font-medium">
+          Versión: {process.env.NEXT_PUBLIC_APP_VERSION} • {process.env.NEXT_PUBLIC_BUILD_DATE}
+        </p>
+      </div>
     </form>
   );
 }
