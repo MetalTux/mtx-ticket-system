@@ -6,10 +6,12 @@ import db from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
-import { sendNotification } from "@/lib/mail-service";
+import { sendNotification } from "../mail-service";
 import { NewTicketEmail } from "@/emails/NewTicketEmail";
 import { TicketReplyEmail } from "@/emails/TicketReplyEmail";
 import { TicketResolvedEmail } from "@/emails/TicketResolvedEmail";
+import { TicketUpdateEmail } from "@/emails/TicketUpdateEmail";
+import { TicketAssignedEmail } from "@/emails/TicketAssignedEmail";
 import { ticketSchema, updateTicketSchema } from "@/lib/validations/tickets";
 
 export type CreateTicketState = {
@@ -19,7 +21,7 @@ export type CreateTicketState = {
     priorityId?: string[];
     categoryId?: string[];
     clientId?: string[];
-    attentionTypeId?: string[]; // NUEVO: Soluciona el error del Formulario
+    attentionTypeId?: string[];
     attachments?: string[];
   };
   message?: string | null;
@@ -32,7 +34,6 @@ export type UpdateTicketState = {
     comment?: string[];
     statusId?: string[];
     priorityId?: string[];
-    // ELIMINADO: categoryId
     assignedToId?: string[];
     isInternal?: string[];
     timeAnalysis?: string[]; 
@@ -43,6 +44,43 @@ export type UpdateTicketState = {
   message?: string | null;
   success?: boolean;
 } | null;
+
+// =========================================================================
+// MOTOR DE RUTEO DE CORREOS: Centraliza la búsqueda de involucrados
+// =========================================================================
+async function getTicketStakeholders(ticketId: string) {
+  const ticket = await db.ticket.findUnique({
+    where: { id: ticketId },
+    include: {
+      creator: true,       // El contacto que requiere la ayuda (Cliente)
+      createdBy: true,     // El usuario que registró el ticket en el sistema
+      assignedTo: true,    // El técnico responsable
+      category: {
+        include: {
+          allowedUsers: {
+            where: { isActive: true },
+            select: { email: true }
+          }
+        }
+      },
+      priority: true,
+    }
+  });
+
+  if (!ticket) throw new Error("Ticket no encontrado");
+
+  return {
+    clientEmail: ticket.creator?.email,
+    creatorEmail: ticket.createdBy?.email,
+    assignedEmail: ticket.assignedTo?.email,
+    areaEmails: ticket.category?.allowedUsers.map(u => u.email).filter(Boolean) as string[],
+    ticket
+  };
+}
+
+// =========================================================================
+// ACCIONES DE BASE DE DATOS
+// =========================================================================
 
 export async function createTicket(prevState: CreateTicketState, formData: FormData) {
   const session = await auth();
@@ -58,7 +96,7 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
     priorityId: formData.get("priorityId") as string,
     categoryId: formData.get("categoryId") as string,
     clientId: formData.get("clientId") as string,
-    attentionTypeId: (formData.get("attentionTypeId") as string) || undefined, // Extracción
+    attentionTypeId: (formData.get("attentionTypeId") as string) || undefined,
     attachments: JSON.parse((formData.get("attachments") as string) || "[]"),
   };
 
@@ -83,18 +121,9 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
       if (!category) throw new Error("Categoría no válida");
 
       const seq = await tx.ticketSequence.upsert({
-        where: { 
-          providerId_categoryId: {
-            providerId: providerId,
-            categoryId: categoryId
-          }
-        },
+        where: { providerId_categoryId: { providerId, categoryId } },
         update: { nextVal: { increment: 1 } },
-        create: { 
-          providerId: providerId,
-          categoryId: categoryId, 
-          nextVal: 2 
-        },
+        create: { providerId, categoryId, nextVal: 2 },
       });
 
       const currentNum = seq.nextVal === 2 ? 1 : seq.nextVal - 1;
@@ -107,52 +136,47 @@ export async function createTicket(prevState: CreateTicketState, formData: FormD
 
       const ticket = await tx.ticket.create({
         data: {
-          folio,
-          sequence: currentNum,
-          title,
-          description,
-          statusId: initialStatus.id,
-          priorityId,
-          categoryId,
-          attentionTypeId, // GUARDAR EN BD
-          creatorId,
-          createdById,
-          clientId,
-          providerId,
+          folio, sequence: currentNum, title, description,
+          statusId: initialStatus.id, priorityId, categoryId, attentionTypeId,
+          creatorId, createdById, clientId, providerId,
           attachments: attachments as Prisma.InputJsonValue,
-        },
-        include: { creator: true, priority: true, category: true },
+        }
       });
 
       await tx.ticketHistory.create({
         data: {
-          ticketId: ticket.id,
-          userId: createdById,
-          statusId: initialStatus.id,
-          priorityId,
-          categoryId,
-          attentionTypeId, // GUARDAR EN HISTORIAL INICIAL
-          comment: "Ticket aperturado en el sistema bajo normativa GTSoft.",
+          ticketId: ticket.id, userId: createdById, statusId: initialStatus.id,
+          priorityId, categoryId, attentionTypeId,
+          comment: "Ticket aperturado en el sistema bajo normativa MTX.",
         }
       });
 
       return ticket;
     });
 
-    if (result?.creator.email) {
+    // REGLA 1: Creación de Ticket
+    // TO: Cliente | CC: Creador (si es distinto) + Usuarios del Área
+    const st = await getTicketStakeholders(result.id);
+    const ccList = new Set<string>(st.areaEmails);
+    
+    if (st.creatorEmail && st.creatorEmail !== st.clientEmail) ccList.add(st.creatorEmail);
+    if (st.clientEmail) ccList.delete(st.clientEmail); // Evitar duplicados en TO y CC
+
+    if (st.clientEmail) {
       sendNotification({
-        to: result.creator.email,
-        subject: `🎫 Confirmación de Ticket: ${result.folio}`,
+        to: st.clientEmail,
+        cc: Array.from(ccList),
+        subject: `🎫 Confirmación de Ticket: ${st.ticket.folio}`,
         component: NewTicketEmail({
-          folio: result.folio,
-          title: result.title,
-          category: result.category.name,
-          priority: result.priority.name,
-          userName: result.creator.name || "Usuario",
-          ticketId: result.id, 
-          attachments: result.attachments as { name: string; url: string }[]
+          folio: st.ticket.folio,
+          title: st.ticket.title,
+          category: st.ticket.category.name,
+          priority: st.ticket.priority.name,
+          userName: st.ticket.creator.name || "Usuario",
+          ticketId: st.ticket.id, 
+          attachments: st.ticket.attachments as { name: string; url: string }[]
         }),
-      }).catch(err => console.error("Error enviando correo:", err));
+      }).catch(err => console.error("Error enviando correo creación:", err));
     }
   } catch (error) {
     console.error("CREATE_TICKET_ERROR:", error);
@@ -168,7 +192,6 @@ export async function addTicketUpdate(prevState: UpdateTicketState, formData: Fo
   const session = await auth();
   if (!session?.user?.id) throw new Error("No autorizado");
 
-  // 1. Extraemos y validamos usando el mismo escudo Zod
   const rawData = {
     ticketId: formData.get("ticketId") as string,
     comment: formData.get("comment") as string,
@@ -183,56 +206,49 @@ export async function addTicketUpdate(prevState: UpdateTicketState, formData: Fo
   const validatedFields = updateTicketSchema.safeParse(rawData);
 
   if (!validatedFields.success) {
-    return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: "Error de validación en la respuesta rápida.",
-    };
+    return { errors: validatedFields.error.flatten().fieldErrors, message: "Error de validación." };
   }
 
   const data = validatedFields.data;
   const attachments = JSON.parse((formData.get("attachments") as string) || "[]") as Prisma.InputJsonValue;
 
   try {
-    const ticketDetails = await db.$transaction(async (tx) => {
-      // 1. Crear historial CON TIEMPOS
+    await db.$transaction(async (tx) => {
       await tx.ticketHistory.create({
         data: { 
-          ticketId: data.ticketId, 
-          userId: session.user.id!, 
-          statusId: data.statusId!, 
-          comment: data.comment, 
-          attachments, 
-          isInternal: data.isInternal,
-          timeAnalysis: data.timeAnalysis,
-          timeDev: data.timeDev,
-          timeSupport: data.timeSupport,
-          timeUpdate: data.timeUpdate
+          ticketId: data.ticketId, userId: session.user.id!, statusId: data.statusId!, 
+          comment: data.comment, attachments, isInternal: data.isInternal,
+          timeAnalysis: data.timeAnalysis, timeDev: data.timeDev,
+          timeSupport: data.timeSupport, timeUpdate: data.timeUpdate
         }
       });
-
-      // 2. Actualizar ticket
       return await tx.ticket.update({
         where: { id: data.ticketId },
-        data: { statusId: data.statusId },
-        include: { creator: true, assignedTo: true, status: true }
+        data: { statusId: data.statusId }
       });
     });
 
-    // 3. ENVÍO DE CORREO
+    // REGLA 2: Actualización (Nuevo Comentario)
+    // TO: Cliente | CC: Creador + Asignado + Usuarios del Área
     if (!data.isInternal) {
-      const isCreator = session.user.id === ticketDetails.creatorId;
-      const recipientEmail = isCreator ? ticketDetails.assignedTo?.email : ticketDetails.creator?.email;
+      const st = await getTicketStakeholders(data.ticketId as string);
+      const ccList = new Set<string>(st.areaEmails);
       
-      if (recipientEmail) {
+      if (st.creatorEmail) ccList.add(st.creatorEmail);
+      if (st.assignedEmail) ccList.add(st.assignedEmail);
+      if (st.clientEmail) ccList.delete(st.clientEmail);
+
+      if (st.clientEmail) {
         sendNotification({
-          to: recipientEmail,
-          subject: `Actualización en tu ticket: ${ticketDetails.folio}`,
+          to: st.clientEmail,
+          cc: Array.from(ccList),
+          subject: `Actualización en tu ticket: ${st.ticket.folio}`,
           component: TicketReplyEmail({
-            folio: ticketDetails.folio,
-            ticketTitle: ticketDetails.title,
-            authorName: session.user.name || "Equipo GTSoft",
+            folio: st.ticket.folio,
+            ticketTitle: st.ticket.title,
+            authorName: session.user.name || "Equipo MTX",
             message: data.comment,
-            ticketId: ticketDetails.id
+            ticketId: st.ticket.id
           })
         }).catch(e => console.error("Error correo reply:", e));
       }
@@ -250,13 +266,11 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
   const session = await auth();
   if (!session?.user?.id) throw new Error("No autorizado");
 
-  // Extracción de datos crudos
   const rawData = {
     ticketId: formData.get("ticketId"),
     comment: formData.get("comment"),
     statusId: formData.get("statusId"),
     priorityId: formData.get("priorityId"),
-    // ELIMINADO: categoryId
     assignedToId: formData.get("assignedToId") || null,
     isInternal: formData.get("isInternal") === "true",
     timeAnalysis: formData.get("timeAnalysis"),
@@ -268,10 +282,7 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
   const validatedFields = updateTicketSchema.safeParse(rawData);
 
   if (!validatedFields.success) {
-    return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: "Error de validación en los datos de actualización.",
-    };
+    return { errors: validatedFields.error.flatten().fieldErrors, message: "Error de validación." };
   }
 
   const data = validatedFields.data;
@@ -279,60 +290,83 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
   const sendEmail = formData.get("sendEmailNotification") === "true";
 
   try {
+    const oldTicket = await db.ticket.findUnique({ where: { id: data.ticketId as string }});
+    const isNewAssignment = data.assignedToId && data.assignedToId !== oldTicket?.assignedToId;
+
     const updatedTicket = await db.$transaction(async (tx) => {
       await tx.ticketHistory.create({
         data: {
-          ticketId: data.ticketId,
-          userId: session.user.id!,
-          statusId: data.statusId!,
-          priorityId: data.priorityId,
-          // ELIMINADO: categoryId
-          assignedToId: data.assignedToId,
-          comment: data.comment,
-          attachments,
-          isInternal: data.isInternal,
-          timeAnalysis: data.timeAnalysis, 
-          timeDev: data.timeDev,
-          timeSupport: data.timeSupport,
-          timeUpdate: data.timeUpdate,
+          ticketId: data.ticketId, userId: session.user.id!, statusId: data.statusId!,
+          priorityId: data.priorityId, assignedToId: data.assignedToId,
+          comment: data.comment, attachments, isInternal: data.isInternal,
+          timeAnalysis: data.timeAnalysis, timeDev: data.timeDev,
+          timeSupport: data.timeSupport, timeUpdate: data.timeUpdate,
         }
       });
 
       return await tx.ticket.update({
         where: { id: data.ticketId },
-        data: {
-          statusId: data.statusId,
-          priorityId: data.priorityId,
-          // ELIMINADO: categoryId (Prisma ya no tocará este campo)
-          assignedToId: data.assignedToId,
-        },
-        include: { creator: true, status: true }
+        data: { statusId: data.statusId, priorityId: data.priorityId, assignedToId: data.assignedToId },
+        include: { status: true }
       });
     });
 
-    if (sendEmail && !data.isInternal && updatedTicket.creator?.email) {
-      if (updatedTicket.status.systemKey === "RESOLVED" || updatedTicket.status.systemKey === "CLOSED") {
+    const st = await getTicketStakeholders(data.ticketId as string);
+
+    // REGLA 3: Escalar Ticket (Nueva asignación)
+    // TO: Usuario Asignado | CC: Usuarios del Área
+    if (isNewAssignment && st.assignedEmail) {
+       const assignCcList = new Set<string>(st.areaEmails);
+       assignCcList.delete(st.assignedEmail); 
+       
+       sendNotification({
+         to: st.assignedEmail,
+         cc: Array.from(assignCcList),
+         subject: `📌 Nuevo Ticket Asignado: ${updatedTicket.folio}`,
+         component: TicketAssignedEmail({
+           folio: updatedTicket.folio,
+           title: updatedTicket.title,
+           assignedToName: st.ticket.assignedTo?.name || "Especialista",
+           assignedByName: session.user.name || "Administrador",
+           ticketId: updatedTicket.id
+         })
+       }).catch(e => console.error("Error correo asignación:", e));
+    }
+
+    // REGLA 2 y 4: Actualización General y Cierre
+    // TO: Cliente | CC: Creador + Asignado + Usuarios del Área
+    if (sendEmail && !data.isInternal && st.clientEmail) {
+      const ccList = new Set<string>(st.areaEmails);
+      if (st.creatorEmail) ccList.add(st.creatorEmail);
+      if (st.assignedEmail) ccList.add(st.assignedEmail);
+      ccList.delete(st.clientEmail);
+
+      const isClosed = updatedTicket.status.systemKey === "RESOLVED" || updatedTicket.status.systemKey === "CLOSED";
+
+      if (isClosed) {
         sendNotification({
-          to: updatedTicket.creator.email,
+          to: st.clientEmail,
+          cc: Array.from(ccList),
           subject: `✅ Ticket Finalizado: ${updatedTicket.folio}`,
           component: TicketResolvedEmail({
             folio: updatedTicket.folio,
             title: updatedTicket.title,
-            userName: updatedTicket.creator.name || "Usuario",
+            userName: st.ticket.creator.name || "Usuario",
             solutionSummary: data.comment,
             ticketId: updatedTicket.id
           })
         }).catch(e => console.error("Error correo resolución:", e));
       } else {
         sendNotification({
-          to: updatedTicket.creator.email,
+          to: st.clientEmail,
+          cc: Array.from(ccList),
           subject: `Actualización de estado: ${updatedTicket.folio}`,
-          component: TicketReplyEmail({
+          component: TicketUpdateEmail({
             folio: updatedTicket.folio,
-            ticketTitle: updatedTicket.title,
-            authorName: "Soporte Técnico",
-            message: `El estado del ticket ha cambiado. Notas: ${data.comment}`,
-            ticketId: updatedTicket.id
+            title: updatedTicket.title,
+            newStatus: updatedTicket.status.name,
+            updatedBy: session.user.name || "Equipo MTX",
+            comment: data.comment
           })
         }).catch(e => console.error("Error correo update full:", e));
       }
@@ -346,6 +380,9 @@ export async function updateTicketFull(prevState: UpdateTicketState, formData: F
   }
 }
 
+// =========================================================================
+// ACTUALIZACIÓN RÁPIDA (USO INTERNO - SIN CORREOS)
+// =========================================================================
 export async function updateTicketStatusQuick(
   ticketId: string, 
   newStatusKeyOrId: string,

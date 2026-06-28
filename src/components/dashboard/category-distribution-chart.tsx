@@ -49,7 +49,7 @@ export default function CategoryDistributionChart({ data }: { data: CategoryData
               {!hasData && <Cell fill="#e2e8f0" className="dark:fill-slate-800" />}
             </Pie>
             <Tooltip               
-              formatter={(value: number | string | undefined, name: string | undefined) => [`${value}%`, name]}
+              formatter={(value: number | string | readonly (string | number)[] | undefined, name: string | number | undefined) => [`${value}%`, name]}
               contentStyle={{ 
                 backgroundColor: 'rgb(15 23 42)', 
                 border: 'none', 
